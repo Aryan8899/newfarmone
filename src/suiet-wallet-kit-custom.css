@@ -1,0 +1,122 @@
+/* src/suiet-wallet-kit-custom.css */
+
+/* Override Suiet Wallet Kit styles to match our application theme */
+
+/* Main button styling */
+.wallet-adapter-button {
+    background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+    border: none !important;
+    color: white !important;
+    font-family: inherit !important;
+    font-weight: 600 !important;
+    border-radius: 0.5rem !important;
+    padding: 0.75rem 1.5rem !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 4px 6px -1px rgba(217, 119, 6, 0.1), 0 2px 4px -1px rgba(217, 119, 6, 0.06) !important;
+}
+
+.wallet-adapter-button:hover {
+    background: linear-gradient(135deg, #d97706, #b45309) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 10px 15px -3px rgba(217, 119, 6, 0.1), 0 4px 6px -2px rgba(217, 119, 6, 0.05) !important;
+}
+
+.wallet-adapter-button:focus {
+    outline: 2px solid rgba(245, 158, 11, 0.5) !important;
+    outline-offset: 2px !important;
+}
+
+.wallet-adapter-button:disabled {
+    opacity: 0.6 !important;
+    cursor: not-allowed !important;
+    transform: none !important;
+}
+
+/* Modal styling */
+.wallet-adapter-modal {
+    background-color: rgba(10, 25, 52, 0.9) !important;
+    backdrop-filter: blur(8px) !important;
+}
+
+.wallet-adapter-modal-wrapper {
+    background: linear-gradient(135deg, rgba(26, 43, 80, 0.9) 0%, rgba(40, 60, 100, 0.95) 100%) !important;
+    border: 1px solid rgba(255, 215, 0, 0.2) !important;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2) !important;
+    border-radius: 1rem !important;
+}
+
+.wallet-adapter-modal-title {
+    color: white !important;
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
+}
+
+.wallet-adapter-modal-content {
+    color: #93c5fd !important;
+    /* blue-300 */
+}
+
+/* Wallet list items */
+.wallet-adapter-wallet-list-item {
+    background-color: rgba(30, 58, 138, 0.3) !important;
+    /* blue-900/30 */
+    border: 1px solid rgba(30, 64, 175, 0.4) !important;
+    /* blue-800/40 */
+    border-radius: 0.75rem !important;
+    transition: all 0.2s ease !important;
+}
+
+.wallet-adapter-wallet-list-item:hover {
+    background-color: rgba(30, 58, 138, 0.5) !important;
+    /* blue-900/50 */
+    transform: translateY(-2px) !important;
+}
+
+.wallet-adapter-wallet-list-item-name {
+    color: white !important;
+    font-weight: 600 !important;
+}
+
+.wallet-adapter-wallet-list-item-description {
+    color: #93c5fd !important;
+    /* blue-300 */
+}
+
+/* Connected wallet dropdown */
+.wallet-adapter-dropdown-list {
+    background: rgba(30, 58, 138, 0.95) !important;
+    /* blue-900/95 */
+    backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(30, 64, 175, 0.4) !important;
+    /* blue-800/40 */
+    border-radius: 0.75rem !important;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1) !important;
+}
+
+.wallet-adapter-dropdown-list-item {
+    color: white !important;
+    transition: all 0.2s ease !important;
+}
+
+.wallet-adapter-dropdown-list-item:hover {
+    background-color: rgba(30, 64, 175, 0.5) !important;
+    /* blue-800/50 */
+}
+
+/* Connected button styling */
+.wallet-adapter-button-connected {
+    background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+    /* blue-600 to blue-700 */
+    border: 1px solid rgba(255, 215, 0, 0.2) !important;
+}
+
+.wallet-adapter-button-connected:hover {
+    background: linear-gradient(135deg, #1d4ed8, #1e40af) !important;
+    /* blue-700 to blue-800 */
+}
+
+/* Special case for wallet connection completed animation */
+.wallet-adapter-connected-success-animation {
+    border-color: #f59e0b !important;
+    /* yellow-500 */
+}

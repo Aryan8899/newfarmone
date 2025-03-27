@@ -1,0 +1,47 @@
+{
+  "name": "atropline-replica",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@headlessui/react": "^2.2.0",
+    "@mysten/dapp-kit": "^0.14.44",
+    "@mysten/sui": "^1.21.2",
+    "@mysten/sui.js": "^0.54.1",
+    "@radix-ui/react-separator": "^1.1.2",
+    "@radix-ui/react-slot": "^1.1.2",
+    "@suiet/wallet-kit": "^0.3.4",
+    "@tailwindcss/vite": "^4.0.15",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.5.0",
+    "lucide-react": "^0.476.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "^5.3.0",
+    "react-router-dom": "^7.2.0",
+    "react-tweet": "^3.2.1",
+    "recharts": "^2.15.1",
+    "sonner": "^2.0.1",
+    "swiper": "^11.2.6",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss": "^4.0.15",
+    "tailwindcss-animate": "^1.0.7",
+    "vite": "^5.2.8"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "^5.62.8",
+    "@types/node": "^22.13.12",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/swiper": "^5.4.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "globals": "^15.12.0",
+    "typescript": "~5.6.2"
+  }
+}
