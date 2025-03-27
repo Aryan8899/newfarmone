@@ -841,6 +841,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                   label="Choose Token"
                   onSelect={handleSingleTokenSelect}
                   includeLP={false}
+                  autoLoad={false} 
                 />
               </div>
 
@@ -1031,11 +1032,13 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                       label="Token 1"
                       onSelect={handleToken0Select}
                       includeLP={false}
+                      autoLoad={false} 
                     />
                     <TokenSelect
                       label="Token 2"
                       onSelect={handleToken1Select}
                       includeLP={false}
+                      autoLoad={false} 
                     />
                   </div>
                 </div>

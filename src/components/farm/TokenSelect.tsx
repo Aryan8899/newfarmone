@@ -47,6 +47,7 @@ interface TokenSelectProps {
   includeLP?: boolean;
   disabled?: boolean;
   placeholder?: string;
+  autoLoad?: boolean; // New prop to control initial loading
 }
 
 // Local storage constants
@@ -54,6 +55,9 @@ const CACHE_KEY = "sui_token_cache";
 const CACHE_EXPIRY = 30 * 60 * 1000; // 30 minutes in milliseconds
 const TOKEN_METADATA_CACHE = new Map<string, TokenMetadata>();
 const DEFAULT_TOKEN_IMAGE = "https://assets.crypto.ro/logos/sui-sui-logo.png";
+
+
+
 
 // Default SUI token as fallback
 const DEFAULT_TOKENS: TokenInfo[] = [
@@ -332,12 +336,14 @@ export function TokenSelect({
   includeLP = false,
   disabled = false,
   placeholder = "Select Token",
+  autoLoad = false, // Default to manual loading
 }: TokenSelectProps) {
   // State management
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [filteredTokens, setFilteredTokens] = useState<TokenInfo[]>([]);
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(autoLoad);
   const [isRetrying, setIsRetrying] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -534,6 +540,9 @@ export function TokenSelect({
       return {};
     }
   };
+
+
+  
 
   // Fetch token data with improved error handling and caching
   const fetchTokens = useCallback(
@@ -810,6 +819,7 @@ export function TokenSelect({
 
           if (cachedTokensList.length > 0) {
             setTokens(cachedTokensList);
+            
           } else {
             // Fallback to default tokens if no cached data matches filters
             setTokens(DEFAULT_TOKENS);
@@ -836,15 +846,13 @@ export function TokenSelect({
 
   // Initial fetch with delay to avoid overwhelming the network on mount
   useEffect(() => {
-    if (account?.address) {
-      // Small initial delay to let other components load first
-      const timer = setTimeout(() => {
-        fetchTokens();
-      }, 100);
-
-      return () => clearTimeout(timer);
+    if (isOpen && !hasLoaded && !isLoading) {
+      fetchTokens();
+      setHasLoaded(true);
     }
-  }, [fetchTokens, account?.address]);
+  }, [isOpen, hasLoaded, isLoading]);
+  
+  
 
   // Manual retry with loading indicator
   const handleRetry = useCallback(() => {
@@ -1072,7 +1080,7 @@ export function TokenSelect({
       {isOpen && (
         <Portal onClose={handleCloseModal}>
           <div
-            className="bg-blue-950 rounded-lg shadow-lg border border-blue-800/50 w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-fadeIn"
+            className="bg-blue-950 rounded-lg shadow-lg border border-blue-800/50 w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col "
             ref={modalRef}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1230,9 +1238,7 @@ export function TokenSelect({
           border-radius: 20px;
         }
 
-        .animate-fadeIn {
-          animation: fadeIn 0.2s ease-in-out;
-        }
+      
 
         @keyframes fadeIn {
           from {
