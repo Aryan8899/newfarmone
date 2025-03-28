@@ -627,21 +627,29 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
           typeArguments: [singleToken.type],
         });
       } else if (stakeMode === "lp" && lpInfo && token0 && token1) {
-        // For LP token staking
-        // Get LP coins
-        const lpTokenType = `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.PAIR}::LPCoin<${lpInfo.token0Type}, ${lpInfo.token1Type}>`;
-
-        if (lpTokens.length === 0) {
+        // Validate inputs
+        console.log('LP Tokens:', lpTokens);
+        console.log('LP Info:', lpInfo);
+        console.log('Stake Amount:', stakeAmount);
+      
+        // Ensure lpTokens exists and is an array
+        const lpTokensArray = lpTokens || [];
+      
+        if (lpTokensArray.length === 0) {
           throw new Error(
             `No LP tokens found for ${token0.symbol}-${token1.symbol} pair`
           );
         }
-
+      
         // Find coins to use
         const targetAmount = BigInt(stakeAmount);
-        const selectedCoins = findOptimalCoins(lpTokens, targetAmount);
-
-        if (selectedCoins.length === 0) {
+        
+        // Add a fallback for findOptimalCoins
+        const selectedCoins = findOptimalCoins 
+          ? findOptimalCoins(lpTokensArray, targetAmount)
+          : lpTokensArray.filter(token => BigInt(token.balance) >= targetAmount);
+      
+        if (!selectedCoins || selectedCoins.length === 0) {
           throw new Error(
             `Insufficient LP token balance: needed ${formatBalance(
               targetAmount.toString(),
@@ -649,55 +657,69 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
             )}, have ${formatBalance(lpBalance, 9)}`
           );
         }
-
+      
         // Create LP coin to use in transaction
-        let lpCoin;
-        if (
-          selectedCoins.length === 1 &&
-          BigInt(selectedCoins[0].balance) === targetAmount
-        ) {
+        let lpCoin = [];
+        if (selectedCoins.length === 1) {
           // Use the coin directly if it has the exact amount
-          lpCoin = tx.object(selectedCoins[0].coinObjectId);
-        } else if (selectedCoins.length === 1) {
-          // Split the coin if it has more than needed
-          lpCoin = tx.splitCoins(tx.object(selectedCoins[0].coinObjectId), [
-            tx.pure.u64(targetAmount.toString()),
-          ])[0];
-        } else {
-          // Merge multiple coins and then split if needed
-          const primaryCoin = tx.object(selectedCoins[0].coinObjectId);
-          const otherCoins = selectedCoins
-            .slice(1)
-            .map((coin) => tx.object(coin.coinObjectId));
-          tx.mergeCoins(primaryCoin, otherCoins);
-
-          const totalSelected = selectedCoins.reduce(
-            (sum, coin) => sum + BigInt(coin.balance),
-            BigInt(0)
-          );
-
-          if (totalSelected > targetAmount) {
-            lpCoin = tx.splitCoins(primaryCoin, [
-              tx.pure.u64(targetAmount.toString()),
-            ])[0];
+          const singleLpCoin = selectedCoins[0];
+          const singleLpBalance = BigInt(singleLpCoin.balance);
+      
+          const lpObject = tx.object(singleLpCoin.coinObjectId);
+      
+          // If the coin has exactly what we need, use it directly
+          // Otherwise split it to get the exact amount
+          if (singleLpBalance === targetAmount) {
+            lpCoin = [lpObject];
           } else {
-            lpCoin = primaryCoin;
+            const splitCoin = tx.splitCoins(lpObject, [tx.pure.u64(targetAmount.toString())])[0];
+            lpCoin = [splitCoin];
+          }
+        } else {
+          // We need multiple LP coins
+          // First merge all coins into the first one
+          const primaryLpCoin = tx.object(selectedCoins[0].coinObjectId);
+          const otherLpCoins = selectedCoins.slice(1).map(coin => tx.object(coin.coinObjectId));
+      
+          tx.mergeCoins(primaryLpCoin, otherLpCoins);
+      
+          // Calculate total balance of all selected coins
+          const totalSelected = selectedCoins.reduce(
+            (sum, coin) => sum + BigInt(coin.balance), 0n
+          );
+      
+          // If total is more than needed, split to get exact amount
+          if (totalSelected > targetAmount) {
+            const splitCoin = tx.splitCoins(primaryLpCoin, [tx.pure.u64(targetAmount.toString())])[0];
+            lpCoin = [splitCoin];
+          } else {
+            lpCoin = [primaryLpCoin];
           }
         }
-
-        // Create vector with stake coin
-        const coinsVec = tx.makeMoveVec({ objects: [lpCoin] });
-
-        // Add stake_lp call
+      
+        // Create the vector for LP coins
+        const vectorArg = tx.makeMoveVec({
+          objects: lpCoin // Use 'objects' instead of 'elements'
+        });
+      
+        // Build stake_lp transaction with proper arguments
         tx.moveCall({
           target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_lp`,
+          typeArguments: [lpInfo.token0Type, lpInfo.token1Type],
           arguments: [
             tx.object(CONSTANTS.FARM_ID),
-            coinsVec,
-            tx.pure.u64(targetAmount.toString()),
-            tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
-          ],
-          typeArguments: [lpInfo.token0Type, lpInfo.token1Type],
+            vectorArg,
+            tx.pure.u256(targetAmount.toString()), // Changed to u256
+            tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID)
+          ]
+        });
+      
+        console.log("Transaction Args:", {
+          farmId: CONSTANTS.FARM_ID,
+          vectorArg,
+          targetAmount: targetAmount.toString(),
+          treasuryCapId: CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID,
+          typeArgs: [lpInfo.token0Type, lpInfo.token1Type]
         });
       } else {
         throw new Error("Please select valid tokens to stake");
@@ -887,7 +909,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                           <button
                             key={percentage}
                             onClick={() => setStakePercentage(percentage)}
-                            className={`flex-1 py-2 px-4 rounded text-sm font-medium transition-colors ${
+                            className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
                               stakePercentage === percentage
                                 ? "bg-yellow-600 text-white"
                                 : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
@@ -1078,12 +1100,12 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                       </div>
 
                       {/* Percentage selection buttons */}
-                      <div className="flex gap-2 mt-3">
+                      <div className="flex gap-2 mt-3 ">
                         {[25, 50, 75, 100].map((percentage) => (
                           <button
                             key={percentage}
                             onClick={() => setStakePercentage(percentage)}
-                            className={`flex-1 py-2 px-4 rounded text-sm font-medium transition-colors ${
+                            className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
                               stakePercentage === percentage
                                 ? "bg-yellow-600 text-white"
                                 : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"

@@ -1188,9 +1188,9 @@ export function TokenSelect({
                   <TokenSkeleton />
                 </>
               ) : (
-                filteredTokens.map((token) => (
+                filteredTokens.map((token, index) => (
                   <TokenListItem
-                    key={token.id}
+                  key={`${token.id}-${index}`} // Combine ID with index to ensure uniqueness
                     token={token}
                     isSelected={selectedToken?.id === token.id}
                     onSelect={handleSelect}
