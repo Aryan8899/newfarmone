@@ -239,12 +239,12 @@ export const Sidebar = () => {
           >
             <div className="bg-blue-950/60 py-1 rounded-b-lg">
               <DropdownItem
-                href="https://suidex-sigma.vercel.app/#/swap"
+                href="https://testthing2.vercel.app/#/swap"
                 label="Exchange"
                 isExternal={true}
               />
               <DropdownItem
-                href="https://suidex-sigma.vercel.app/#/addliquidity"
+                href="https://testthing2.vercel.app/#/addliquidity"
                 label="Liquidity"
                 isExternal={true}
               />

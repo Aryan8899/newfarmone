@@ -348,7 +348,7 @@ const QuickActionsPanel = () => {
           </Link>
 
           <a
-            href="https://suidex-sigma.vercel.app/#/swap"
+            href="https://testthing2.vercel.app/#/swap"
             target="_blank"
             rel="noopener noreferrer"
             className="block group"
