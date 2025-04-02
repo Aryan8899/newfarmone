@@ -14,8 +14,11 @@ import {
   FaStar,
   FaFire,
 } from "react-icons/fa";
+import { useWallet } from '@suiet/wallet-kit';
+import { SuiClient } from "@mysten/sui/client";
 import { useBackground } from "../contexts/BackgroundContext";
 import { StatsCardProps, ValueCardProps, MarketStats } from "../types";
+import { suiClient } from "@/utils/suiClient";
 
 // Enhanced Stats Card Component with reduced motion
 const StatsCard = ({ label, value, icon, trend = null }: StatsCardProps) => {
@@ -381,7 +384,8 @@ const QuickActionsPanel = () => {
 };
 
 // Farmer Dashboard Component with enhanced styling
-const FarmerDashboard = () => {
+const FarmerDashboard = ({ victoryBalance }: { victoryBalance: string }) => {
+
   return (
     <div className="card-bg-premium rounded-xl shadow-xl overflow-hidden relative">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-yellow-500/10 to-transparent rounded-bl-full"></div>
@@ -402,13 +406,14 @@ const FarmerDashboard = () => {
             dollarValue="~$0.00"
             icon={FaTractor}
           />
+<ValueCard
+  label="VICTORY in Wallet"
+  value={victoryBalance}
+  dollarValue="~$0.00"
+  icon={FaCoins}
+/>
 
-          <ValueCard
-            label="VICTORY in Wallet"
-            value="0.000"
-            dollarValue="~$0.00"
-            icon={FaCoins}
-          />
+
 
           <div className="flex justify-end mt-4">
             <Link to="/farm" className="group">
@@ -503,6 +508,8 @@ const TwitterFeed = () => {
 
 export const Dashboard = () => {
   const { setIntensity } = useBackground();
+  const [victoryBalance, setVictoryBalance] = useState('0.000');
+const { account, connected } = useWallet();
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [marketStats, setMarketStats] = useState<MarketStats>({
     marketCap: "$475,605",
@@ -516,6 +523,42 @@ export const Dashboard = () => {
   useEffect(() => {
     setIntensity("low"); // Reduced intensity for a more professional look
   }, [setIntensity]);
+
+
+  useEffect(() => {
+    const fetchVictoryBalance = async () => {
+      if (!connected || !account?.address) return;
+      
+      const all = await suiClient.getAllBalances({ owner: account.address });
+      console.log("ALL BALANCES", all);
+      
+      try {
+        const balances = await suiClient.getBalance({
+          owner: account.address,
+          coinType: '0xdf026c0faf8930c852e5efc6c15edc15c632abdc22de4c2d766d22c42a32eda9::victory_token::VICTORY_TOKEN',
+        });
+        
+        // Convert the raw balance to billions
+        const rawBalance: string = balances.totalBalance;
+        
+        // Given the discrepancy, it seems the wallet is dividing by 10^15 to get billions
+        const billionsValue = parseFloat(rawBalance) / 1e15;
+        
+        // Format to 2 decimal places with commas for thousands
+        const formattedBalance = billionsValue.toLocaleString('en-US', { 
+          minimumFractionDigits: 2, 
+          maximumFractionDigits: 2 
+        });
+        
+        // Add the "B" suffix to match the wallet display
+        setVictoryBalance(`${formattedBalance} B`);
+      } catch (err) {
+        console.error("Failed to fetch VICTORY balance:", err);
+      }
+    };
+    
+    fetchVictoryBalance();
+  }, [connected, account]);
 
   // Animation on load
   useEffect(() => {
@@ -566,7 +609,8 @@ export const Dashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Farmer Dashboard */}
           <div className="animate-on-scroll stagger-1">
-            <FarmerDashboard />
+          <FarmerDashboard victoryBalance={victoryBalance} />
+
           </div>
 
           {/* Market Chart */}

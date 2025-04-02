@@ -357,7 +357,7 @@ export const PoolDetailsModal = ({
     >
       <div
         ref={modalRef}
-        className="bg-blue-950 rounded-xl border border-blue-800/50 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden modal-animation"
+        className="bg-blue-950 rounded-xl border border-blue-800/50 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden modal-animation flex flex-col lg:-mt-320 md:-mt-400 -mt-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center p-6 border-b border-blue-800/50">
@@ -390,7 +390,7 @@ export const PoolDetailsModal = ({
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto flex-grow">
           {poolDetailsLoading ? (
             <div className="flex flex-col items-center justify-center py-12">
               <FaSpinner className="text-yellow-400 text-3xl animate-spin mb-4" />
@@ -534,6 +534,7 @@ export const PoolDetailsModal = ({
                 </div>
               </div>
 
+              <div className="p-6 pt-0 border-t border-blue-800/50 mt-auto">
               <div className="flex flex-col sm:flex-row gap-3">
                 <button
                   onClick={onClose}
@@ -551,6 +552,7 @@ export const PoolDetailsModal = ({
                     <FaArrowRight />
                   </button>
                 </Link>
+              </div>
               </div>
             </div>
           ) : (
