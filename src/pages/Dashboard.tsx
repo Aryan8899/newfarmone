@@ -535,7 +535,7 @@ const { account, connected } = useWallet();
       try {
         const balances = await suiClient.getBalance({
           owner: account.address,
-          coinType: '0xdf026c0faf8930c852e5efc6c15edc15c632abdc22de4c2d766d22c42a32eda9::victory_token::VICTORY_TOKEN',
+          coinType: '0xf882b67867ad5675b77f9fda790f417c330ae58915f0f664b70bc70669445cbf::victory_token::VICTORY_TOKEN',
         });
         
         // Convert the raw balance to billions
