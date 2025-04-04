@@ -46,6 +46,7 @@ interface TokenSelectProps {
   excludeTokenTypes?: string[];
   includeLP?: boolean;
   disabled?: boolean;
+  
   placeholder?: string;
   autoLoad?: boolean; // New prop to control initial loading
 }
@@ -417,16 +418,44 @@ export function TokenSelect({
 
   // Find token by ID when selectedTokenId prop changes
   useEffect(() => {
-    if (selectedTokenId && tokens.length > 0) {
-      const token = tokens.find(
-        (t) =>
-          t.id === selectedTokenId || t.allObjectIds.includes(selectedTokenId)
+
+    
+    if (!selectedTokenId || tokens.length === 0) return;
+  
+    if (selectedToken?.id === selectedTokenId) return;
+  
+    const normalizeType = (t: string) =>
+      t
+        .replace(/^0x/, "")      // remove leading 0x
+        .replace(/^0+/, "")      // remove leading zeros after 0x
+        .toLowerCase();
+    
+
+    const normalizedSelected = normalizeType(selectedTokenId);
+  
+    const match = tokens.find((t) => {
+      const tokenIdNorm = normalizeType(t.id);
+      const coinTypeNorm = normalizeType(t.coinType);
+      const objectIdMatch = t.allObjectIds.some(
+        (id) => normalizeType(id) === normalizedSelected
       );
-      if (token) {
-        setSelectedToken(token);
-      }
+      return (
+        tokenIdNorm === normalizedSelected ||
+        coinTypeNorm === normalizedSelected ||
+        objectIdMatch
+      );
+    });
+    
+  
+  
+    if (match) {
+      setSelectedToken(match);
     }
-  }, [selectedTokenId, tokens]);
+  }, [selectedTokenId, tokens, selectedToken]);
+  
+  
+
+  
 
   // Cleanup effect
   useEffect(() => {
@@ -436,6 +465,9 @@ export function TokenSelect({
       }
     };
   }, []);
+
+
+  
 
   // Helper: Extract coin type from type string
   const extractCoinType = (typeString: string): string | null => {
@@ -766,10 +798,15 @@ export function TokenSelect({
           { maxRetries: 2, baseDelay: 0, increaseFactor: 1, jitter: 0, }
         ); // Only retry twice to avoid overwhelming
 
+        
+
         if (fetchedTokens) {
           // Update tokens and cache
           setTokens(fetchedTokens);
           setNetworkFailed(false);
+
+          
+          console.log("✅ All fetched token coinTypes:", fetchedTokens.map(t => t.coinType));
 
           // Cache tokens by ID for faster access
           const newCache: Record<string, TokenInfo> = {};
@@ -781,6 +818,8 @@ export function TokenSelect({
             });
           });
 
+
+          
           // Update the local cache state
           setTokenDataCache(newCache);
 
@@ -817,6 +856,7 @@ export function TokenSelect({
             }
           );
 
+
           if (cachedTokensList.length > 0) {
             setTokens(cachedTokensList);
             
@@ -846,11 +886,18 @@ export function TokenSelect({
 
   // Initial fetch with delay to avoid overwhelming the network on mount
   useEffect(() => {
-    if (isOpen && !hasLoaded && !isLoading) {
+    // Load tokens on mount regardless of selectedTokenId
+    if (!hasLoaded && !isLoading) {
       fetchTokens();
       setHasLoaded(true);
     }
-  }, [isOpen, hasLoaded, isLoading]);
+  }, [hasLoaded, isLoading]);
+
+
+useEffect(() => {
+  console.log("💡 selectedTokenId in TokenSelect:", selectedTokenId);
+}, [selectedTokenId]);
+
   
   
 
@@ -869,6 +916,7 @@ export function TokenSelect({
 
   // Handle token selection
   const handleSelect = (token: TokenInfo) => {
+    console.log("Selected Token:", token); // Log the selected token
     setSelectedToken(token);
     setIsOpen(false);
     onSelect({

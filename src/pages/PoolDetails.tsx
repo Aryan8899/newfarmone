@@ -17,6 +17,8 @@ import {
   FaFireAlt,
   FaExclamationTriangle,
 } from "react-icons/fa";
+import { useLocation } from "react-router-dom";
+
 import { useBackground } from "../contexts/BackgroundContext";
 import { CONSTANTS } from "../constants/addresses";
 import StakingComponent from "../components/farm/StakingComponent";
@@ -217,27 +219,50 @@ export default function PoolDetails() {
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [poolDetails, setPoolDetails] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<string>("details");
+ 
   const { connected } = useWallet();
   const { typeString } = useParams<{ typeString: string }>();
+
+  const location = useLocation();
+const queryParams = new URLSearchParams(location.search);
+const aprFromQuery = parseFloat(queryParams.get("apr") || "0");
+
+const tabFromQuery = queryParams.get("tab");
+const tokenFromQuery = queryParams.get("token");
+const [activeTab, setActiveTab] = useState<string>(tabFromQuery || "details");
+
 
   // Decode the type string from URL (it might be encoded)
   const decodedTypeString = decodeURIComponent(typeString || "");
 
   // Mock pool details data
+  const extractPoolName = (type: string) => {
+    const match = type.match(/LPCoin<([^,]+),\s*([^>]+)>/);
+    if (match) {
+      const token1 = match[1].split("::").pop();
+      const token2 = match[2].split("::").pop();
+      return `${token1}-${token2} LP`;
+    }
+  
+    // If it's a single token pool
+    const token = type.split("::").pop();
+    return token || "Unknown";
+  };
+  
+  const poolName = extractPoolName(decodedTypeString);
+  const isLp = decodedTypeString.includes("LPCoin<");
+
+  const formatPercentage = (value: number): string => {
+    return value.toFixed(4); // Matches list page precision
+  };
+  
   const mockPoolDetails = {
-    name: decodedTypeString.includes("::pair::LPCoin<")
-      ? "SUI-VICTORY LP"
-      : decodedTypeString.includes("sui::SUI")
-      ? "SUI"
-      : "VICTORY",
-    type: decodedTypeString.includes("::pair::LPCoin<") ? "lp" : "single",
-    tokenSymbol: decodedTypeString.includes("::pair::LPCoin<")
-      ? "SUI-VICTORY LP"
-      : decodedTypeString.includes("sui::SUI")
-      ? "SUI"
-      : "VICTORY",
-    apr: 78.5,
+    name: poolName,
+    type: isLp ? "lp" : "single",
+    tokenSymbol: poolName,
+    apr: aprFromQuery,
+
+    
     tvl: "$425,682",
     tvlValue: 425682,
     tvlChange: 3.2,
@@ -324,6 +349,53 @@ export default function PoolDetails() {
     },
   ];
 
+
+  const formatBigIntForDisplay = (
+    bigIntValue: bigint | string | number,
+    decimals = 9
+  ): string => {
+    if (typeof bigIntValue !== "bigint") {
+      try {
+        bigIntValue = BigInt(bigIntValue);
+      } catch {
+        return "0";
+      }
+    }
+  
+    const divisor = BigInt(10 ** decimals);
+    const integerPart = bigIntValue / divisor;
+    const fractionalPart = bigIntValue % divisor;
+  
+    // Format with commas for the integer part
+    const formattedInteger = integerPart
+      .toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  
+    // Only show decimal part if non-zero
+    if (fractionalPart === BigInt(0)) {
+      return formattedInteger;
+    }
+  
+    // Format the fractional part, padding with leading zeros if needed
+    let fractionalStr = fractionalPart.toString().padStart(decimals, "0");
+  
+    // Trim trailing zeros
+    fractionalStr = fractionalStr.replace(/0+$/, "");
+  
+    if (fractionalStr.length === 0) {
+      return formattedInteger;
+    }
+  
+    return `${formattedInteger}.${fractionalStr}`;
+  };
+
+ 
+
+
+  
+  
+
+  
   // Set background intensity when component mounts
   useEffect(() => {
     setIntensity("low");
@@ -333,13 +405,21 @@ export default function PoolDetails() {
       setPoolDetails(mockPoolDetails);
       setIsLoading(false);
       setIsLoaded(true);
-    }, 1000);
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [setIntensity, decodedTypeString]);
 
   // Add scroll animation observer
   useEffect(() => {
+
+    console.log("Decoded Type String:", decodedTypeString);
+console.log("Query Tab:", tabFromQuery);
+
+console.log(">>> tokenFromQuery:", tokenFromQuery);
+console.log(">>> isLp:", isLp);
+
+
     const observerCallback = (entries: IntersectionObserverEntry[]) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
@@ -436,7 +516,7 @@ export default function PoolDetails() {
                 <div className="mt-4 md:mt-0">
                   <div className="flex flex-col items-end">
                     <div className="text-yellow-400 text-3xl font-dela">
-                      {poolDetails?.apr}% APR
+                    {poolDetails?.apr ? formatPercentage(poolDetails.apr) : "0.0000"}% APR
                     </div>
                     <div className="text-blue-300 text-sm">
                       Annual Percentage Rate
@@ -552,6 +632,19 @@ export default function PoolDetails() {
                           {poolDetails?.rewardsValue}
                         </span>
                       </div>
+
+                      <div className="flex justify-between bg-blue-900/40 rounded p-3">
+                      <span className="text-blue-300">LP Token:</span>
+                      <span className="text-white font-medium">
+                        {poolDetails.isLpToken ? "Yes" : "No"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between bg-blue-900/40 rounded p-3">
+                      <span className="text-blue-300">Native Pair:</span>
+                      <span className="text-white font-medium">
+                        {poolDetails.isNativePair ? "Yes" : "No"}
+                      </span>
+                    </div>
                     </div>
                   </div>
 
@@ -572,18 +665,24 @@ export default function PoolDetails() {
                           {poolDetails?.tokenSymbol}
                         </span>
                       </div>
-                      <div className="text-xs text-blue-300 mt-4 bg-blue-900/30 p-3 rounded">
-                        <p className="mb-2">
-                          <span className="font-medium">Pool Type:</span>{" "}
-                          {decodedTypeString}
-                        </p>
-                        <p>
-                          <span className="font-medium">Note:</span> Fees
-                          collected from this pool are distributed to VICTORY
-                          token lockers and partially used for token buyback and
-                          burn.
-                        </p>
-                      </div>
+
+                      <div className="flex justify-between items-center bg-blue-900/40 rounded p-3">
+                      <span className="text-blue-300">Total Staked:</span>
+                      <span className="text-white font-medium bg-blue-900/40 px-2 py-1 rounded text-sm">
+                        {formatBigIntForDisplay(poolDetails.totalStakedBigInt)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-blue-300 mt-4 bg-blue-900/30 p-3 rounded break-words">
+  <p className="mb-2">
+    <span className="font-medium">Pool Type:</span>{" "}
+    <span className="break-all">{decodedTypeString}</span>
+  </p>
+  <p>
+    <span className="font-medium">Note:</span> Fees collected from this pool are distributed to VICTORY
+    token lockers and partially used for token buyback and burn.
+  </p>
+</div>
+
                     </div>
                   </div>
                 </div>
@@ -601,10 +700,12 @@ export default function PoolDetails() {
           {activeTab === "stake" && (
             <div>
               {connected ? (
+                
                 <StakingComponent
-                  initialMode={poolDetails?.type}
-                  initialToken={decodedTypeString}
-                />
+    initialMode={mockPoolDetails.type} // "lp" or "single"
+    initialToken={tokenFromQuery || ""}
+  />
+            
               ) : (
                 <div className="card-bg-premium p-8 rounded-xl text-center">
                   <FaExclamationTriangle className="text-yellow-400 text-5xl mx-auto mb-4" />
@@ -930,6 +1031,8 @@ export default function PoolDetails() {
 //       setError("Failed to fetch pool events.");
 //     }
 //   };
+
+
 
 //   // Fetch pool details
 //   const fetchPoolDetails = async () => {

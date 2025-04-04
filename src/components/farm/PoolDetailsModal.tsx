@@ -357,7 +357,7 @@ export const PoolDetailsModal = ({
     >
       <div
         ref={modalRef}
-        className="bg-blue-950 rounded-xl border border-blue-800/50 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden modal-animation flex flex-col lg:-mt-320 md:-mt-400 -mt-900"
+        className="bg-blue-950 rounded-xl border border-blue-800/50 shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden modal-animation flex flex-col lg:-mt-420 md:-mt-400 -mt-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center p-6 border-b border-blue-800/50">

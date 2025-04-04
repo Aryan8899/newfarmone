@@ -169,6 +169,8 @@ const extractTokenName = (typeString: string): string => {
   return "Unknown";
 };
 
+
+
 // Extract LP tokens from a type string using regex patterns
 const extractLpTokens = (typeString: string): any => {
   const lpTokens: any[] = [];
@@ -245,26 +247,24 @@ const PoolCard = ({
   calculateAPR?: Function;
   onShowDetails: (pool: PoolType) => void;
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // Calculate mock APR if not provided
   const apr = pool.apr || parseFloat((Math.random() * 100 + 28).toFixed(2));
 
-  // Generate a linear gradient based on APR for visual indicator
   const getAPRGradient = (aprValue: number) => {
-    // Map APR to hue value (green to red)
     const hue = Math.max(0, Math.min(120, 120 - (aprValue / 200) * 120));
     return `linear-gradient(to right, hsl(${hue}, 80%, 40%), hsl(${hue}, 80%, 60%))`;
   };
 
-  // Format APR with 4 decimal places for display
+
+  console.log("Navigating to pool:", pool.typeString);
+
+
   const formattedApr = formatPercentage(apr);
 
   return (
-    <div className="card-bg-premium rounded-xl overflow-hidden transition-all duration-300 shadow-lg hover:shadow-blue-900/20">
-      <div className="p-5">
+    <div className="card-bg-premium rounded-xl overflow-hidden shadow-lg hover:shadow-blue-900/20 transition-all duration-300">
+      <div className="p-5 space-y-4">
         {/* Header */}
-        <div className="flex justify-between mb-4">
+        <div className="flex justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-blue-900/60 p-2 rounded-full">
               {pool.isLp ? (
@@ -292,8 +292,8 @@ const PoolCard = ({
           </div>
         </div>
 
-        {/* Status Bar */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* Status */}
+        <div className="flex items-center gap-3">
           <div className="h-2 flex-1 bg-blue-900/60 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full"
@@ -303,122 +303,104 @@ const PoolCard = ({
               }}
             ></div>
           </div>
-          {pool.active !== false ? (
-            <div className="text-green-400 text-xs flex items-center gap-1">
-              <FaCheck size={10} />
-              <span>Active</span>
-            </div>
-          ) : (
-            <div className="text-red-400 text-xs flex items-center gap-1">
-              <FaExclamationCircle size={10} />
-              <span>Inactive</span>
-            </div>
-          )}
-        </div>
-
-        {/* Summary Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-blue-900/20 rounded-lg p-2">
-            <p className="text-blue-300 text-xs">Allocation Points</p>
-            <p className="text-white font-medium">
-              {pool.allocationPoints ||
-                (pool.eventData?.allocationPoints
-                  ? pool.eventData.allocationPoints
-                  : "100")}
-            </p>
-          </div>
-          <div className="bg-blue-900/20 rounded-lg p-2">
-            <p className="text-blue-300 text-xs">Total Staked</p>
-            <p className="text-white font-medium">
-              {pool.totalStaked
-                ? pool.totalStaked
-                : pool.isLp
-                ? "~$425,000"
-                : "~$125,000"}
-            </p>
+          <div
+            className={`text-xs flex items-center gap-1 ${
+              pool.active !== false ? "text-green-400" : "text-red-400"
+            }`}
+          >
+            {pool.active !== false ? (
+              <>
+                <FaCheck size={10} />
+                <span>Active</span>
+              </>
+            ) : (
+              <>
+                <FaExclamationCircle size={10} />
+                <span>Inactive</span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Toggle Details Button */}
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full text-blue-200 text-sm hover:text-white transition-colors flex items-center justify-center gap-2"
-        >
-          {isExpanded ? (
-            <>
-              <span>Hide Details</span>
-              <FaChevronUp size={12} />
-            </>
-          ) : (
-            <>
-              <span>Show Details</span>
-              <FaChevronDown size={12} />
-            </>
-          )}
-        </button>
+        {/* Divider Line */}
+        <div className="border-t border-blue-800 my-2"></div>
+
+        {/* Pool Info */}
+        {/* Pool Info */}
+<div className="grid grid-cols-2 gap-3 text-sm">
+  <div>
+    <p className="text-blue-300 mb-1">Deposit Fee</p>
+    <p className="text-white font-medium">
+      {pool.depositFee ?? "0.5000"}%
+    </p>
+  </div>
+  <div>
+    <p className="text-blue-300 mb-1">Withdrawal Fee</p>
+    <p className="text-white font-medium">
+      {pool.withdrawalFee ?? "0.5000"}%
+    </p>
+  </div>
+  <div>
+    <p className="text-blue-300 mb-1">Allocation Points</p>
+    <p className="text-white font-medium">
+      {pool.allocationPoints ?? "N/A"}
+    </p>
+  </div>
+  <div>
+    <p className="text-blue-300 mb-1">Total Staked</p>
+    <p className="text-white font-medium">
+      {pool.totalStaked ?? "~$0"}
+    </p>
+  </div>
+  <div>
+    <p className="text-blue-300 mb-1">Type</p>
+    <p className="text-white font-medium">
+      {pool.isLp ? "LP Token" : "Single Token"}
+    </p>
+  </div>
+  <div>
+    <p className="text-blue-300 mb-1">Daily Rewards</p>
+    <p className="text-white font-medium">
+      ~{((apr * 100) / 365).toFixed(4)} VICTORY
+    </p>
+  </div>
+</div>
+
+
+        {/* Type string */}
+        {/* <div className="mt-3 bg-blue-900/40 rounded-lg p-3">
+          <p className="text-blue-300 text-xs mb-1">Token Type String</p>
+          <p className="text-white text-xs break-all">{pool.typeString}</p>
+        </div> */}
+
+        {/* Action Buttons */}
+        <div className="flex gap-3 mt-4">
+        <Link
+  to={`/pool/${encodeURIComponent(pool.typeString)}?apr=${pool.apr}`}
+  className="flex-1"
+>
+  <button
+    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition"
+  >
+    <FaInfoCircle />
+    Details
+  </button>
+</Link>
+
+<Link
+  to={`/pool/${encodeURIComponent(pool.typeString)}?tab=stake&apr=${pool.apr}&token=${encodeURIComponent(pool.typeString)}`}
+  className="flex-1"
+>
+  <button className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+    <FaTractor />
+    Farm
+  </button>
+</Link>
+
+
+
+        </div>
       </div>
-
-      {/* Expanded Details */}
-      {isExpanded && (
-        <div className="bg-blue-900/30 p-5 border-t border-blue-800/50">
-          <div className="grid grid-cols-2 gap-4 mb-4">
-            <div>
-              <p className="text-blue-300 text-sm mb-1">Deposit Fee</p>
-              <p className="text-white">
-                {pool.depositFee !== undefined
-                  ? formatPercentage(pool.depositFee) + "%"
-                  : "0.5000%"}
-              </p>
-            </div>
-            <div>
-              <p className="text-blue-300 text-sm mb-1">Withdrawal Fee</p>
-              <p className="text-white">
-                {pool.withdrawalFee !== undefined
-                  ? formatPercentage(pool.withdrawalFee) + "%"
-                  : "0.5000%"}
-              </p>
-            </div>
-            <div>
-              <p className="text-blue-300 text-sm mb-1">Token Type</p>
-              <p className="text-white">
-                {pool.isLp ? "LP Token" : "Single Token"}
-              </p>
-            </div>
-            <div>
-              <p className="text-blue-300 text-sm mb-1">Daily Rewards</p>
-              <p className="text-white">
-                ~{((apr * 100) / 365).toFixed(4)} VICTORY
-              </p>
-            </div>
-          </div>
-
-          {/* Advanced Token Info */}
-          <div className="bg-blue-900/40 rounded-lg p-3 mb-4">
-            <p className="text-blue-300 text-xs mb-1">Token Type String</p>
-            <p className="text-white text-xs break-all">{pool.typeString}</p>
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button
-              onClick={() => onShowDetails(pool)}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2"
-            >
-              <FaInfoCircle />
-              <span>Details</span>
-            </button>
-            <Link
-              to={`/pool/${encodeURIComponent(pool.typeString)}`}
-              className="flex-1"
-            >
-              <button className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2">
-                <FaTractor />
-                <span>Farm</span>
-              </button>
-            </Link>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

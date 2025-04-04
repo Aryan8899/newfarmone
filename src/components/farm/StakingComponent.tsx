@@ -110,30 +110,62 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       : { token0Type: type1, token1Type: type0 };
   };
 
-  // Initialize component with initialToken if provided
+  // Initialize component with initialToken if providedz
   useEffect(() => {
+    console.log("initialToken received in StakingComponent:", initialToken);
+    console.log("Effect triggered → initialToken:", initialToken, "connected:", connected);
+  
     const initializeWithToken = async () => {
       if (!initialToken || !account?.address) return;
 
       try {
         // Determine if it's an LP token or single token
         const isLp = initialToken.includes("::pair::LPCoin<");
+        console.log("Is LP token?", isLp);
 
         if (isLp) {
           setStakeMode("lp");
 
           // Extract the token types from LP token
-          const match = initialToken.match(/LPCoin<(.+),\s*(.+)>/);
+          const match = initialToken.match(/LPCoin<([^,]+),\s*([^>]+)>/);
+
           if (match) {
-            const token0Type = match[1].trim();
-            const token1Type = match[2].trim().replace(">", "");
+            const normalizeAddress = (type: string) => {
+              const parts = type.split("::");
+              if (parts.length === 3 && !parts[0].startsWith("0x")) {
+                parts[0] = `0x${parts[0]}`;
+              }
+              return parts.join("::");
+            };
+        
+            // ✅ Apply normalization
+            const token0Type = normalizeAddress(match[1].trim());
+            const token1Type = normalizeAddress(match[2].trim());
+        
+            console.log("➡️ token0Type (normalized):", token0Type);
+            console.log("➡️ token1Type (normalized):", token1Type);
+        
+
+
+            console.log("LP detected:", isLp);
+console.log("Setting token0:", token0Type);
+console.log("Setting token1:", token1Type);
+
+console.log("Single token detected:", initialToken);
+
+console.log("🔥 Auto-selecting Token1:", token1?.id);
+
 
             // Try to get token metadata
+            console.log("Fetching metadata for token0:", token0Type);
             const token0Metadata = await suiClient
               .getCoinMetadata({
                 coinType: token0Type,
               })
               .catch(() => null);
+
+              console.log("Fetching metadata for token1:", token1Type);
+
 
             const token1Metadata = await suiClient
               .getCoinMetadata({
@@ -141,7 +173,16 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
               })
               .catch(() => null);
 
+
+              console.log("the rest is ",token1Metadata)
+
+              console.log("the 2nd rest is",token0Metadata)
+
             // Set token0 and token1
+
+            console.log("➡️ token0Type (raw):", token0Type);
+
+
             if (token0Metadata) {
               setToken0({
                 id: token0Type,
@@ -158,27 +199,30 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
               });
             }
 
-            if (token1Metadata) {
-              setToken1({
-                id: token1Type,
-                name:
-                  token1Metadata.name ||
-                  token1Type.split("::").pop() ||
-                  "Unknown",
-                symbol:
-                  token1Metadata.symbol ||
-                  token1Type.split("::").pop() ||
-                  "Unknown",
-                type: token1Type,
-                decimals: token1Metadata.decimals || 9,
-              });
-            }
+            setToken1({
+              id: token1Type,
+              name:
+                token1Metadata?.name || token1Type.split("::").pop() || "Unknown",
+              symbol:
+                token1Metadata?.symbol || token1Type.split("::").pop() || "Unknown",
+              type: token1Type,
+              decimals: token1Metadata?.decimals || 9,
+            });
+            
+            
+
+            console.log("🔥 Auto-selectingggg Token1:", token1?.id);
+            console.log("🔥 Auto-selectingggg Token2:", token1?.id); 
 
             // Set LP info
             setLpInfo({
+              id: initialToken, // <-- This is the correct full LP token type
               token0Type,
               token1Type,
             });
+            
+            console.log("✅ lpInfo.id set to:", initialToken);
+
 
             // Fetch LP token balance
             fetchLpBalance(token0Type, token1Type);
@@ -204,6 +248,12 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
               decimals: metadata.decimals || 9,
             };
 
+
+            
+
+            console.log("Setting single token:", tokenInfo);
+
+
             setSingleToken(tokenInfo);
 
             // Fetch token balance
@@ -217,6 +267,10 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
 
     initializeWithToken();
   }, [initialToken, account?.address]);
+
+
+
+  
 
   // Calculate stake amount based on percentage
   useEffect(() => {
@@ -321,8 +375,23 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       const { token0Type: sortedToken0, token1Type: sortedToken1 } =
         await sortTokens(token0Type, token1Type);
 
-      // Construct LP token type
-      const lpTokenType = `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.PAIR}::LPCoin<${sortedToken0}, ${sortedToken1}>`;
+
+        const normalizeType = (type: string) =>
+          type.startsWith("0x") ? type : `0x${type}`;
+    
+        const normalizedToken0 = normalizeType(sortedToken0);
+        const normalizedToken1 = normalizeType(sortedToken1);
+    
+        console.log("sortedToken0:", normalizedToken0);
+        console.log("sortedToken1:", normalizedToken1);
+        console.log("PACKAGE_ID:", CONSTANTS.PACKAGE_ID);
+        console.log("MODULES.PAIR:", CONSTANTS.MODULES.PAIR);
+    
+        // Construct LP token type
+        const lpTokenType = `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.PAIR}::LPCoin<${normalizedToken0}, ${normalizedToken1}>`;
+    
+      // use the full LP type passed as prop
+
 
       // Get LP coins
       const coins = await suiClient.getCoins({
@@ -350,10 +419,13 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
         symbol: "LP",
       });
 
+      
+
       // Fetch APR for this LP token
       fetchAprEstimate(lpTokenType);
     } catch (error) {
       console.error(`Error fetching LP balance:`, error);
+      
       setLpBalance("0");
       setLpTokens([]);
     }
@@ -748,6 +820,19 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
     }
   };
 
+  useEffect(() => {
+    console.log("initialToken received in StakingComponent:", initialToken);
+
+    
+  }, [initialToken]);
+
+  useEffect(() => {
+    console.log("🔥 Auto-selecting Token0:", token0?.id);
+    console.log("🔥 Auto-selecting Token1:", token1?.id);
+  }, [token0, token1]);
+  
+  
+
   // Calculate estimated rewards
   const calculateRewards = () => {
     // Convert APR to daily rate
@@ -859,12 +944,14 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
               </h3>
 
               <div className="mb-4">
-                <TokenSelect
-                  label="Choose Token"
-                  onSelect={handleSingleTokenSelect}
-                  includeLP={false}
-                  autoLoad={false} 
-                />
+              <TokenSelect
+  label="Choose Token"
+  onSelect={handleSingleTokenSelect}
+  includeLP={false}
+  autoLoad={false}
+  selectedTokenId={singleToken?.id}
+/>
+
               </div>
 
               {singleToken && (
@@ -1055,16 +1142,36 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                       onSelect={handleToken0Select}
                       includeLP={false}
                       autoLoad={false} 
+                      selectedTokenId={token0?.id}
+                      
                     />
                     <TokenSelect
                       label="Token 2"
                       onSelect={handleToken1Select}
                       includeLP={false}
                       autoLoad={false} 
+                      selectedTokenId={token1?.id}
                     />
                   </div>
                 </div>
               </div>
+
+
+              {lpBalance === "0" && token0 && token1 && (
+  <div className="text-yellow-400 bg-blue-900/30 p-4 rounded-lg text-sm mt-4 border border-yellow-500/20">
+    <p>You don’t have any LP tokens for this pool.</p>
+    <a
+      href={`https://testthing2.vercel.app/#/addliquidity`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-300 underline mt-2 inline-block"
+    >
+      Provide Liquidity on SuiDex
+    </a>
+  </div>
+)}
+
+
 
               {lpInfo && token0 && token1 && (
                 <div className="bg-blue-900/30 p-4 rounded-lg">
