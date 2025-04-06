@@ -166,7 +166,9 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
 
               console.log("Fetching metadata for token1:", token1Type);
 
+              
 
+              
             const token1Metadata = await suiClient
               .getCoinMetadata({
                 coinType: token1Type,
@@ -237,16 +239,35 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
             })
             .catch(() => null);
 
-          if (metadata) {
+            if (!metadata) {
+              console.warn("⚠️ No metadata returned for", initialToken);
+            }
+            
+
+            console.log("the tokeninfor is",metadata)
+
+            const normalizeType = (type: string) =>
+              type.startsWith("0x") ? type : `0x${type}`;
+
+            const normalizedToken = normalizeType(initialToken);
+          
             const tokenInfo: TokenInfo = {
-              id: initialToken,
-              name:
-                metadata.name || initialToken.split("::").pop() || "Unknown",
-              symbol:
-                metadata.symbol || initialToken.split("::").pop() || "Unknown",
-              type: initialToken,
-              decimals: metadata.decimals || 9,
-            };
+  id: normalizedToken,
+  name: metadata?.name || normalizedToken.split("::").pop() || "Unknown",
+  symbol: metadata?.symbol || normalizedToken.split("::").pop() || "Unknown",
+  type: normalizedToken,
+  decimals: metadata?.decimals ?? 9,
+};
+            
+            if (!metadata) {
+              console.warn("⚠️ No metadata returned for", initialToken);
+            }
+            
+            console.log("✅ Setting token info with fallback:", tokenInfo);
+            setSingleToken(tokenInfo);
+            fetchTokenBalance(normalizedToken);
+
+            
 
 
             
@@ -254,11 +275,11 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
             console.log("Setting single token:", tokenInfo);
 
 
-            setSingleToken(tokenInfo);
+            // setSingleToken(tokenInfo);
 
-            // Fetch token balance
-            fetchTokenBalance(initialToken);
-          }
+            // // Fetch token balance
+            // fetchTokenBalance(initialToken);
+          
         }
       } catch (error) {
         console.error("Error initializing with token:", error);
@@ -378,6 +399,7 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
 
         const normalizeType = (type: string) =>
           type.startsWith("0x") ? type : `0x${type}`;
+        
     
         const normalizedToken0 = normalizeType(sortedToken0);
         const normalizedToken1 = normalizeType(sortedToken1);
@@ -438,10 +460,16 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     allObjectIds: string[];
     coinType: string;
   }) => {
+
+    if (!tokenInfo?.coinType) {
+      console.error("❌ Invalid tokenInfo passed to handleSingleTokenSelect:", tokenInfo);
+      return;
+    }
     // Get token metadata to create TokenInfo object
     suiClient
       .getCoinMetadata({ coinType: tokenInfo.coinType })
       .then((metadata) => {
+        console.log("📥 Metadata fetched for token:", metadata);
         const token: TokenInfo = {
           id: tokenInfo.id,
           name:
@@ -826,6 +854,8 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     
   }, [initialToken]);
 
+  
+
   useEffect(() => {
     console.log("🔥 Auto-selecting Token0:", token0?.id);
     console.log("🔥 Auto-selecting Token1:", token1?.id);
@@ -949,8 +979,9 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
   onSelect={handleSingleTokenSelect}
   includeLP={false}
   autoLoad={false}
-  selectedTokenId={singleToken?.id}
+  selectedTokenId={singleToken?.id || initialToken}
 />
+
 
               </div>
 

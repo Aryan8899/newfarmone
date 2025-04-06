@@ -446,9 +446,10 @@ export function TokenSelect({
       );
     });
     
-  
+  console.log("meta is matched")
   
     if (match) {
+      console.log("meta is nottttt matched")
       setSelectedToken(match);
     }
   }, [selectedTokenId, tokens, selectedToken]);
@@ -457,7 +458,7 @@ export function TokenSelect({
 
   
 
-  // Cleanup effect
+  // Cleanup effectyy
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
