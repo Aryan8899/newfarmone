@@ -24,6 +24,11 @@ import {
 } from "react-icons/fa";
 import { toast } from "sonner";
 import { PoolDetailsModal } from "./PoolDetailsModal";
+import {
+  getTokenObjectId,
+  normalizeCoinType,
+  extractTokenTypesFromLP,
+} from "../../utils/tokenUtils";
 
 interface PoolListProps {
   calculateAPR?: Function;
@@ -169,8 +174,6 @@ const extractTokenName = (typeString: string): string => {
   return "Unknown";
 };
 
-
-
 // Extract LP tokens from a type string using regex patterns
 const extractLpTokens = (typeString: string): any => {
   const lpTokens: any[] = [];
@@ -237,7 +240,7 @@ const formatPercentage = (value: number): string => {
   return value.toFixed(4);
 };
 
-// Pool Card Component
+// Updated PoolCard component with dynamic token fetching
 const PoolCard = ({
   pool,
   calculateAPR,
@@ -247,16 +250,59 @@ const PoolCard = ({
   calculateAPR?: Function;
   onShowDetails: (pool: PoolType) => void;
 }) => {
+  const { account } = useWallet();
+  const [token0Id, setToken0Id] = useState<string | null>(null);
+  const [token1Id, setToken1Id] = useState<string | null>(null);
+  const [isLoadingTokenIds, setIsLoadingTokenIds] = useState(false);
+
+  // Fetch token object IDs when LP tokens are rendered
+  useEffect(() => {
+    const fetchTokenIds = async () => {
+      if (!account?.address || !pool.isLp) return;
+
+      setIsLoadingTokenIds(true);
+      try {
+        // Extract token types from LP token with improved method
+        if (pool.typeString.includes("::pair::LPCoin<")) {
+          const tokens = extractTokenTypesFromLP(pool.typeString);
+
+          if (tokens) {
+            const { token0Type, token1Type } = tokens;
+            console.log(
+              `Extracted token types for ${pool.displayName}:`,
+              token0Type,
+              token1Type
+            );
+
+            // Dynamically get object IDs for both tokens
+            const [id0, id1] = await Promise.all([
+              getTokenObjectId(token0Type, suiClient, account.address),
+              getTokenObjectId(token1Type, suiClient, account.address),
+            ]);
+
+            setToken0Id(id0);
+            setToken1Id(id1);
+            console.log(
+              `Fetched token IDs for ${pool.displayName}: ${id0}, ${id1}`
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching token object IDs:", error);
+      } finally {
+        setIsLoadingTokenIds(false);
+      }
+    };
+
+    fetchTokenIds();
+  }, [pool.isLp, pool.typeString, pool.displayName, account?.address]);
+
   const apr = pool.apr || parseFloat((Math.random() * 100 + 28).toFixed(2));
 
   const getAPRGradient = (aprValue: number) => {
     const hue = Math.max(0, Math.min(120, 120 - (aprValue / 200) * 120));
     return `linear-gradient(to right, hsl(${hue}, 80%, 40%), hsl(${hue}, 80%, 60%))`;
   };
-
-
-  console.log("Navigating to pool:", pool.typeString);
-
 
   const formattedApr = formatPercentage(apr);
 
@@ -326,79 +372,103 @@ const PoolCard = ({
         <div className="border-t border-blue-800 my-2"></div>
 
         {/* Pool Info */}
-        {/* Pool Info */}
-<div className="grid grid-cols-2 gap-3 text-sm">
-  <div>
-    <p className="text-blue-300 mb-1">Deposit Fee</p>
-    <p className="text-white font-medium">
-      {pool.depositFee ?? "0.5000"}%
-    </p>
-  </div>
-  <div>
-    <p className="text-blue-300 mb-1">Withdrawal Fee</p>
-    <p className="text-white font-medium">
-      {pool.withdrawalFee ?? "0.5000"}%
-    </p>
-  </div>
-  <div>
-    <p className="text-blue-300 mb-1">Allocation Points</p>
-    <p className="text-white font-medium">
-      {pool.allocationPoints ?? "N/A"}
-    </p>
-  </div>
-  <div>
-    <p className="text-blue-300 mb-1">Total Staked</p>
-    <p className="text-white font-medium">
-      {pool.totalStaked ?? "~$0"}
-    </p>
-  </div>
-  <div>
-    <p className="text-blue-300 mb-1">Type</p>
-    <p className="text-white font-medium">
-      {pool.isLp ? "LP Token" : "Single Token"}
-    </p>
-  </div>
-  <div>
-    <p className="text-blue-300 mb-1">Daily Rewards</p>
-    <p className="text-white font-medium">
-      ~{((apr * 100) / 365).toFixed(4)} VICTORY
-    </p>
-  </div>
-</div>
-
-
-        {/* Type string */}
-        {/* <div className="mt-3 bg-blue-900/40 rounded-lg p-3">
-          <p className="text-blue-300 text-xs mb-1">Token Type String</p>
-          <p className="text-white text-xs break-all">{pool.typeString}</p>
-        </div> */}
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-blue-300 mb-1">Deposit Fee</p>
+            <p className="text-white font-medium">
+              {pool.depositFee ?? "0.5000"}%
+            </p>
+          </div>
+          <div>
+            <p className="text-blue-300 mb-1">Withdrawal Fee</p>
+            <p className="text-white font-medium">
+              {pool.withdrawalFee ?? "0.5000"}%
+            </p>
+          </div>
+          <div>
+            <p className="text-blue-300 mb-1">Allocation Points</p>
+            <p className="text-white font-medium">
+              {pool.allocationPoints ?? "N/A"}
+            </p>
+          </div>
+          <div>
+            <p className="text-blue-300 mb-1">Total Staked</p>
+            <p className="text-white font-medium">
+              {pool.totalStaked ?? "~$0"}
+            </p>
+          </div>
+          <div>
+            <p className="text-blue-300 mb-1">Type</p>
+            <p className="text-white font-medium">
+              {pool.isLp ? "LP Token" : "Single Token"}
+            </p>
+          </div>
+          <div>
+            <p className="text-blue-300 mb-1">Daily Rewards</p>
+            <p className="text-white font-medium">
+              ~{((apr * 100) / 365).toFixed(4)} VICTORY
+            </p>
+          </div>
+        </div>
 
         {/* Action Buttons */}
         <div className="flex gap-3 mt-4">
-        <Link
-  to={`/pool/${encodeURIComponent(pool.typeString)}?apr=${pool.apr}`}
-  className="flex-1"
->
-  <button
-    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition"
-  >
-    <FaInfoCircle />
-    Details
-  </button>
-</Link>
+          {/* Details button - passing type string is fine here */}
+          <Link
+            to={`/pool/${encodeURIComponent(pool.typeString)}?apr=${pool.apr}`}
+            className="flex-1"
+          >
+            <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+              <FaInfoCircle />
+              Details
+            </button>
+          </Link>
 
-<Link
-  to={`/pool/${encodeURIComponent(pool.typeString)}?tab=stake&apr=${pool.apr}&token=${encodeURIComponent(pool.typeString)}`}
-  className="flex-1"
->
-  <button className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition">
-    <FaTractor />
-    Farm
-  </button>
-</Link>
-
-
-
+          {/* LP Tokens - Always include the type string and object IDs when available */}
+          {pool.isLp ? (
+            <Link
+              to={`/pool/${encodeURIComponent(pool.typeString)}?tab=stake&apr=${
+                pool.apr
+              }&token=${encodeURIComponent(pool.typeString)}${
+                token0Id ? `&token0=${encodeURIComponent(token0Id)}` : ""
+              }${token1Id ? `&token1=${encodeURIComponent(token1Id)}` : ""}`}
+              className="flex-1"
+            >
+              <button
+                className={`w-full ${
+                  isLoadingTokenIds
+                    ? "bg-green-600/50 cursor-wait"
+                    : "bg-green-600 hover:bg-green-700"
+                } text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition`}
+                disabled={isLoadingTokenIds}
+              >
+                {isLoadingTokenIds ? (
+                  <>
+                    <FaSpinner className="animate-spin" />
+                    <span>Loading</span>
+                  </>
+                ) : (
+                  <>
+                    <FaTractor />
+                    <span>Farm</span>
+                  </>
+                )}
+              </button>
+            </Link>
+          ) : (
+            // Single token - just pass the type string
+            <Link
+              to={`/pool/${encodeURIComponent(pool.typeString)}?tab=stake&apr=${
+                pool.apr
+              }&token=${encodeURIComponent(pool.typeString)}`}
+              className="flex-1"
+            >
+              <button className="w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition">
+                <FaTractor />
+                Farm
+              </button>
+            </Link>
+          )}
         </div>
       </div>
     </div>

@@ -535,24 +535,24 @@ export const PoolDetailsModal = ({
               </div>
 
               <div className="p-6 pt-0 border-t border-blue-800/50 mt-auto">
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={onClose}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2"
-                >
-                  Close Details
-                </button>
-                <Link
-                  to={`/pool/${encodeURIComponent(pool.typeString)}`}
-                  className="flex-1"
-                >
-                  <button className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2">
-                    <FaTractor />
-                    <span>Farm This Pool</span>
-                    <FaArrowRight />
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={onClose}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2"
+                  >
+                    Close Details
                   </button>
-                </Link>
-              </div>
+                  <Link
+                    to={`/pool/${encodeURIComponent(pool.typeString)}`}
+                    className="flex-1"
+                  >
+                    <button className="w-full bg-green-600 hover:bg-green-700 transition-colors text-white rounded-lg py-2 px-4 flex items-center justify-center gap-2">
+                      <FaTractor />
+                      <span>Farm This Pool</span>
+                      <FaArrowRight />
+                    </button>
+                  </Link>
+                </div>
               </div>
             </div>
           ) : (

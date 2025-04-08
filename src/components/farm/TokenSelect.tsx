@@ -46,7 +46,7 @@ interface TokenSelectProps {
   excludeTokenTypes?: string[];
   includeLP?: boolean;
   disabled?: boolean;
-  
+
   placeholder?: string;
   autoLoad?: boolean; // New prop to control initial loading
 }
@@ -57,8 +57,16 @@ const CACHE_EXPIRY = 30 * 60 * 1000; // 30 minutes in milliseconds
 const TOKEN_METADATA_CACHE = new Map<string, TokenMetadata>();
 const DEFAULT_TOKEN_IMAGE = "https://assets.crypto.ro/logos/sui-sui-logo.png";
 
+// Victory token filter strings (used for better identification)
+const VICTORY_TOKEN_FILTERS = [
+  "::victory_token::",
+  "::VICTORY_TOKEN",
+  "victory",
+  "VICTORY",
+];
 
-
+// LP token filter strings
+const LP_TOKEN_FILTERS = ["::LPCoin<", "::pair::", "lp", "liquidity"];
 
 // Default SUI token as fallback
 const DEFAULT_TOKENS: TokenInfo[] = [
@@ -328,6 +336,56 @@ const Portal = ({
     : null;
 };
 
+// Helper: Check if a token should be filtered out
+const shouldFilterToken = (
+  coinType: string,
+  typeString: string,
+  displayData: any,
+  excludeTokenTypes: string[] = [],
+  includeLP: boolean = false
+): boolean => {
+  // Normalize strings for case-insensitive comparison
+  const coinTypeLower = coinType.toLowerCase();
+  const typeStringLower = typeString.toLowerCase();
+
+  // 1. Check if explicitly excluded by the user
+  if (
+    excludeTokenTypes.some((type) => coinTypeLower.includes(type.toLowerCase()))
+  ) {
+    return true;
+  }
+
+  // 2. Check if it's a Victory token (always exclude)
+  if (
+    VICTORY_TOKEN_FILTERS.some(
+      (filter) =>
+        coinTypeLower.includes(filter.toLowerCase()) ||
+        typeStringLower.includes(filter.toLowerCase())
+    )
+  ) {
+    return true;
+  }
+
+  // 3. Check if it's an LP token
+  const isLP =
+    LP_TOKEN_FILTERS.some(
+      (filter) =>
+        coinTypeLower.includes(filter.toLowerCase()) ||
+        typeStringLower.includes(filter.toLowerCase())
+    ) ||
+    (displayData?.name &&
+      displayData.name.toString().toLowerCase().includes("lp")) ||
+    (displayData?.symbol &&
+      displayData.symbol.toString().toLowerCase().includes("lp"));
+
+  // Exclude LP tokens if includeLP is false
+  if (isLP && !includeLP) {
+    return true;
+  }
+
+  return false;
+};
+
 // The main TokenSelect component
 export function TokenSelect({
   onSelect,
@@ -418,21 +476,18 @@ export function TokenSelect({
 
   // Find token by ID when selectedTokenId prop changes
   useEffect(() => {
-
-    
     if (!selectedTokenId || tokens.length === 0) return;
-  
+
     if (selectedToken?.id === selectedTokenId) return;
-  
+
     const normalizeType = (t: string) =>
       t
-        .replace(/^0x/, "")      // remove leading 0x
-        .replace(/^0+/, "")      // remove leading zeros after 0x
+        .replace(/^0x/, "") // remove leading 0x
+        .replace(/^0+/, "") // remove leading zeros after 0x
         .toLowerCase();
-    
 
     const normalizedSelected = normalizeType(selectedTokenId);
-  
+
     const match = tokens.find((t) => {
       const tokenIdNorm = normalizeType(t.id);
       const coinTypeNorm = normalizeType(t.coinType);
@@ -445,20 +500,13 @@ export function TokenSelect({
         objectIdMatch
       );
     });
-    
-  console.log("meta is matched")
-  
+
     if (match) {
-      console.log("meta is nottttt matched")
       setSelectedToken(match);
     }
   }, [selectedTokenId, tokens, selectedToken]);
-  
-  
 
-  
-
-  // Cleanup effectyy
+  // Cleanup effect
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
@@ -466,9 +514,6 @@ export function TokenSelect({
       }
     };
   }, []);
-
-
-  
 
   // Helper: Extract coin type from type string
   const extractCoinType = (typeString: string): string | null => {
@@ -480,18 +525,6 @@ export function TokenSelect({
 
     // Format: 0x...::module::TOKEN
     return typeString;
-  };
-
-  // Helper: Check if token is an LP token
-  const isLPToken = (typeString: string, metadata?: any): boolean => {
-    if (!typeString) return false;
-
-    return (
-      typeString.includes("::pair::LPCoin<") ||
-      typeString.includes("::LPCoin<") ||
-      (metadata?.name && metadata.name.includes("LP")) ||
-      (metadata?.symbol && metadata.symbol.includes("LP"))
-    );
   };
 
   // Helper: Get simplified token name from type
@@ -574,10 +607,7 @@ export function TokenSelect({
     }
   };
 
-
-  
-
-  // Fetch token data with improved error handling and caching
+  // Fetch token data with improved UTXO handling
   const fetchTokens = useCallback(
     async (forceRefresh = false) => {
       if (!account?.address) {
@@ -608,12 +638,17 @@ export function TokenSelect({
           // Apply filters to cached tokens
           const cachedTokensList = Object.values(cachedTokensMap).filter(
             (token) => {
-              const isLP = token.type.includes("LPCoin");
-              if (isLP && !includeLP) return false;
               if (
-                excludeTokenTypes.some((type) => token.coinType.includes(type))
-              )
+                shouldFilterToken(
+                  token.coinType,
+                  token.type,
+                  token.metadata,
+                  excludeTokenTypes,
+                  includeLP
+                )
+              ) {
                 return false;
+              }
               return true;
             }
           );
@@ -630,25 +665,17 @@ export function TokenSelect({
           }
         }
 
-        // Use retry mechanism to handle potential network failures
+        // IMPROVED UTXO HANDLING: Use getAllCoins for better merging
         const fetchedTokens = await retry(
           async () => {
-            // Fetch user's coin objects with optimized query
-            const coinObjects = await suiClient.getOwnedObjects({
+            // This approach is better for Sui's UTXO model as it already merges coins
+            const coins = await suiClient.getAllCoins({
               owner: account.address,
-              filter: {
-                StructType: "0x2::coin::Coin", // Filter for coins only
-              },
-              options: {
-                showType: true,
-                showContent: true,
-                showDisplay: true,
-              },
-              // Use a smaller limit to reduce payload size
-              limit: 25,
             });
 
-            // Group coins by their type for efficient processing
+            console.log("Fetched coins:", coins);
+
+            // Map to track tokens by coin type
             const coinTypeMap = new Map<
               string,
               {
@@ -660,131 +687,88 @@ export function TokenSelect({
               }
             >();
 
-            // Process each coin object
-            for (const obj of coinObjects.data) {
-              if (!obj.data?.type) continue;
-
-              const typeString = obj.data.type;
-              const coinType = extractCoinType(typeString);
-              if (!coinType) continue;
-
-              // Check if we should include or exclude this token
-              if (excludeTokenTypes.some((type) => coinType.includes(type))) {
-                continue;
-              }
-
-              // Handle LP tokens inclusion/exclusion
-              const objMetadata = obj.data.display?.data;
-              const isLP = isLPToken(typeString, objMetadata);
-              if (isLP && !includeLP) {
-                continue;
-              }
-
-              // Extract balance
-              let balance = 0n;
-              if (
-                obj.data.content &&
-                typeof obj.data.content === "object" &&
-                "fields" in obj.data.content
-              ) {
-                const fields = obj.data.content.fields;
-                if (
-                  fields &&
-                  typeof fields === "object" &&
-                  "balance" in fields
-                ) {
-                  balance = BigInt((fields.balance as string) || 0);
-                }
-              }
+            // Process each coin - getAllCoins already merges coins by type
+            for (const coin of coins.data) {
+              const coinType = coin.coinType;
+              const objectId = coin.coinObjectId;
+              const balance = BigInt(coin.balance || "0");
 
               // Skip tokens with zero balance
               if (balance <= 0n) continue;
 
-              // Get display data if available
-              let displayData = null;
-              try {
-                if (obj.data.display?.data) {
-                  displayData = obj.data.display.data;
-                }
-              } catch (e) {
-                console.warn("Error parsing display data:", e);
+              // Check if token should be filtered out
+              if (
+                shouldFilterToken(
+                  coinType,
+                  `0x2::coin::Coin<${coinType}>`,
+                  null,
+                  excludeTokenTypes,
+                  includeLP
+                )
+              ) {
+                continue;
               }
 
-              // Simplified coin name
+              // Get simplified name for display
               const simpleCoinType = getSimplifiedName(coinType);
 
-              // Get or create entry in the map
+              // Add to or update the map
               if (coinTypeMap.has(coinType)) {
                 const entry = coinTypeMap.get(coinType)!;
-                entry.ids.push(obj.data.objectId);
+                entry.ids.push(objectId);
                 entry.balance += balance;
-
-                // Update display data if better information is available
-                if (displayData && displayData.name && !entry.metadata?.name) {
-                  entry.metadata = {
-                    ...entry.metadata,
-                    name: displayData.name as string,
-                    symbol: (displayData.symbol as string) || simpleCoinType,
-                    iconUrl: (displayData.image_url as string) || undefined,
-                  };
-                }
               } else {
                 coinTypeMap.set(coinType, {
-                  ids: [obj.data.objectId],
-                  type: typeString,
+                  ids: [objectId],
+                  type: `0x2::coin::Coin<${coinType}>`,
                   coinType,
                   balance,
-                  metadata: displayData
-                    ? {
-                      name: (displayData.name as string) || simpleCoinType,
-                      symbol:
-                        (displayData.symbol as string) ||
-                        simpleCoinType.substring(0, 3).toUpperCase(),
-                      iconUrl: (displayData.image_url as string) || undefined,
-                    }
-                    : {
-                      name: simpleCoinType,
-                      symbol: simpleCoinType.substring(0, 3).toUpperCase(),
-                    },
+                  metadata: {
+                    name: simpleCoinType,
+                    symbol: simpleCoinType.substring(0, 4).toUpperCase(),
+                    decimals: 9, // Default decimals
+                  },
                 });
               }
             }
 
-            // If no tokens found, use default tokens
+            // If no tokens found, return default
             if (coinTypeMap.size === 0) {
               return DEFAULT_TOKENS;
             }
 
-            // Batch fetch metadata for all coin types
+            // Fetch metadata for all coin types
             const coinTypes = Array.from(coinTypeMap.keys());
             const metadataResults = await batchFetchMetadata(coinTypes);
 
-            // Update with fetched metadata
+            // Update metadata for all tokens
             for (const [coinType, metadata] of Object.entries(
               metadataResults
             )) {
               if (coinTypeMap.has(coinType)) {
                 const entry = coinTypeMap.get(coinType)!;
-                entry.metadata = {
-                  name:
-                    metadata.name ||
-                    entry.metadata?.name ||
-                    getSimplifiedName(coinType),
-                  symbol:
-                    metadata.symbol ||
-                    entry.metadata?.symbol ||
-                    getSimplifiedName(coinType).substring(0, 3).toUpperCase(),
-                  iconUrl: metadata.iconUrl || entry.metadata?.iconUrl,
-                  decimals: metadata.decimals || 9,
-                };
+                if (metadata) {
+                  entry.metadata = {
+                    ...entry.metadata,
+                    name:
+                      metadata.name ||
+                      entry.metadata?.name ||
+                      getSimplifiedName(coinType),
+                    symbol:
+                      metadata.symbol ||
+                      entry.metadata?.symbol ||
+                      getSimplifiedName(coinType).substring(0, 4).toUpperCase(),
+                    iconUrl: metadata.iconUrl || entry.metadata?.iconUrl,
+                    decimals: metadata.decimals || 9,
+                  };
+                }
               }
             }
 
-            // Convert to list and sort
-            return Array.from(coinTypeMap.values())
-              .filter((entry) => entry.balance > 0n) // Only show tokens with positive balance
+            // Convert to array and sort by balance
+            const result = Array.from(coinTypeMap.values())
               .map((entry) => ({
-                id: entry.ids[0],
+                id: entry.ids[0], // Use the first object ID as the main ID
                 type: entry.type,
                 coinType: entry.coinType,
                 allObjectIds: entry.ids,
@@ -795,19 +779,24 @@ export function TokenSelect({
                 // Sort by balance (highest first)
                 return Number(BigInt(b.totalBalance) - BigInt(a.totalBalance));
               });
-          },
-          { maxRetries: 2, baseDelay: 0, increaseFactor: 1, jitter: 0, }
-        ); // Only retry twice to avoid overwhelming
 
-        
+            console.log(
+              `Found ${result.length} unique token types after merging UTXO coins`
+            );
+            return result;
+          },
+          { maxRetries: 2, baseDelay: 0, increaseFactor: 1, jitter: 0 }
+        );
 
         if (fetchedTokens) {
           // Update tokens and cache
           setTokens(fetchedTokens);
           setNetworkFailed(false);
 
-          
-          console.log("✅ All fetched token coinTypes:", fetchedTokens.map(t => t.coinType));
+          console.log(
+            "✅ All fetched token coinTypes:",
+            fetchedTokens.map((t) => t.coinType)
+          );
 
           // Cache tokens by ID for faster access
           const newCache: Record<string, TokenInfo> = {};
@@ -819,8 +808,6 @@ export function TokenSelect({
             });
           });
 
-
-          
           // Update the local cache state
           setTokenDataCache(newCache);
 
@@ -847,20 +834,24 @@ export function TokenSelect({
         if (Object.keys(tokenDataCache).length > 0) {
           const cachedTokensList = Object.values(tokenDataCache).filter(
             (token) => {
-              const isLP = token.type.includes("LPCoin");
-              if (isLP && !includeLP) return false;
+              // Apply filtering conditions
               if (
-                excludeTokenTypes.some((type) => token.coinType.includes(type))
-              )
+                shouldFilterToken(
+                  token.coinType,
+                  token.type,
+                  token.metadata,
+                  excludeTokenTypes,
+                  includeLP
+                )
+              ) {
                 return false;
+              }
               return true;
             }
           );
 
-
           if (cachedTokensList.length > 0) {
             setTokens(cachedTokensList);
-            
           } else {
             // Fallback to default tokens if no cached data matches filters
             setTokens(DEFAULT_TOKENS);
@@ -894,13 +885,9 @@ export function TokenSelect({
     }
   }, [hasLoaded, isLoading]);
 
-
-useEffect(() => {
-  console.log("💡 selectedTokenId in TokenSelect:", selectedTokenId);
-}, [selectedTokenId]);
-
-  
-  
+  useEffect(() => {
+    console.log("💡 selectedTokenId in TokenSelect:", selectedTokenId);
+  }, [selectedTokenId]);
 
   // Manual retry with loading indicator
   const handleRetry = useCallback(() => {
@@ -1129,7 +1116,7 @@ useEffect(() => {
       {isOpen && (
         <Portal onClose={handleCloseModal}>
           <div
-            className="bg-blue-950 rounded-lg shadow-lg border border-blue-800/50 w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col "
+            className="bg-blue-950 rounded-lg shadow-lg border border-blue-800/50 w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col"
             ref={modalRef}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1239,7 +1226,7 @@ useEffect(() => {
               ) : (
                 filteredTokens.map((token, index) => (
                   <TokenListItem
-                  key={`${token.id}-${index}`} // Combine ID with index to ensure uniqueness
+                    key={`${token.id}-${index}`} // Combine ID with index to ensure uniqueness
                     token={token}
                     isSelected={selectedToken?.id === token.id}
                     onSelect={handleSelect}
@@ -1286,8 +1273,6 @@ useEffect(() => {
           background-color: rgba(59, 130, 246, 0.5);
           border-radius: 20px;
         }
-
-      
 
         @keyframes fadeIn {
           from {

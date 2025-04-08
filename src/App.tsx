@@ -1,9 +1,9 @@
-// src/App.tsx
 import { HashRouter as Router, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { Layout } from "./components/layout/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Farm } from "./pages/Farm";
+import { TokenLocker } from "./pages/TokenLocker";
 import PoolDetails from "./pages/PoolDetails";
 import MyPositions from "./pages/MyPositions";
 import { BackgroundProvider } from "./contexts/BackgroundContext";
@@ -16,6 +16,7 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/farm" element={<Farm />} />
+            <Route path="/token-locker" element={<TokenLocker />} />
             <Route path="/pool/:typeString" element={<PoolDetails />} />
             <Route path="/my-positions" element={<MyPositions />} />
             {/* Add a catch-all redirect */}

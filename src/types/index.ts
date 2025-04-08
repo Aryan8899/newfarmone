@@ -76,6 +76,7 @@ export interface DropdownItemProps {
   icon?: React.ElementType;
   isExternal?: boolean;
   isActive?: boolean;
+  badge?:any;
 }
 
 // Background Effects Props

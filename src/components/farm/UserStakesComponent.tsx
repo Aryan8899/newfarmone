@@ -19,6 +19,14 @@ import {
   FaSadTear,
 } from "react-icons/fa";
 import { CONSTANTS } from "../../constants/addresses";
+// Import the timestamp utilities
+import {
+  formatDate,
+  formatDateNoTime,
+  calculateTimeElapsed,
+  toMilliseconds,
+  logTimezoneInfo,
+} from "../../utils/timestampUtils";
 
 export interface StakingPosition {
   id: string;
@@ -43,7 +51,7 @@ export interface StakingPosition {
   apr?: number;
 }
 
-// Position Card Component
+// Position Card Component with auto-updating timer
 const PositionCard = ({
   position,
   onClaim,
@@ -60,24 +68,47 @@ const PositionCard = ({
   currentlyProcessing: string | null;
 }) => {
   const [showDetails, setShowDetails] = useState(false);
+  // Add a state to track current time and force re-renders
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
-  // Format a timestamp to a human-readable date
-  const formatDate = (timestamp: string) => {
-    const date = new Date(parseInt(timestamp));
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  // Set up an interval to update the timer every second
+  useEffect(() => {
+    // Log timestamp info when component mounts
 
-  // Calculate time staked
-  const calculateTimeStaked = (timestamp: string) => {
-    const stakeDate = new Date(parseInt(timestamp));
-    const now = new Date();
-    const diffMs = now.getTime() - stakeDate.getTime();
+    const checkPairExistence = async () => {
+      const events = await suiClient.queryEvents({
+        query: {
+          MoveEventType: `${CONSTANTS.PACKAGE_ID}::farm::Staked`,
+        },
+      });
+
+      console.log("Staked events:", events);
+    };
+    checkPairExistence();
+    console.log(
+      `Position ${position.id} - Initial stake timestamp:`,
+      position.initialStakeTimestamp
+    );
+
+    // Set up interval to update current time every second (1000ms)
+    const intervalId = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+
+    // Clean up interval when component unmounts
+    return () => clearInterval(intervalId);
+  }, [position.id, position.initialStakeTimestamp]);
+
+  // Calculate time staked with the current time
+  const calculateCurrentTimeStaked = () => {
+    const timestampMs = toMilliseconds(position.initialStakeTimestamp);
+    const diffMs = currentTime - timestampMs;
+
+    // Ensure we don't show negative time or zero when it's just happened
+    if (diffMs < 60000) {
+      // Less than a minute
+      return "Just now";
+    }
 
     // Calculate days, hours, minutes
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -147,7 +178,7 @@ const PositionCard = ({
           <div className="bg-blue-900/20 rounded-lg p-2">
             <p className="text-blue-300 text-xs">Staked For</p>
             <p className="text-white font-medium flex items-center gap-1">
-              {calculateTimeStaked(position.initialStakeTimestamp)}
+              {calculateCurrentTimeStaked()} {/* Use dynamic calculation */}
               <FaClock className="text-blue-400 text-xs" />
             </p>
           </div>
@@ -259,6 +290,28 @@ const PositionCard = ({
               {position.pendingRewards}
             </p>
           </div>
+
+          {/* Timestamp debugging section */}
+          <div className="bg-blue-900/40 rounded-lg p-3 mb-4">
+            <p className="text-blue-300 text-xs mb-1">Timestamp Debug</p>
+            <p className="text-white text-xs break-all">
+              Raw: {position.initialStakeTimestamp}
+            </p>
+            <p className="text-white text-xs break-all">
+              In MS: {toMilliseconds(position.initialStakeTimestamp)}
+            </p>
+            <p className="text-white text-xs break-all">
+              Current Time: {new Date(currentTime).toLocaleTimeString()}
+            </p>
+            <p className="text-white text-xs break-all">
+              Time Diff:{" "}
+              {Math.floor(
+                (currentTime - toMilliseconds(position.initialStakeTimestamp)) /
+                  1000
+              )}{" "}
+              seconds
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -269,8 +322,261 @@ interface UserStakesComponentProps {
   onStakesUpdate?: (stakes: StakingPosition[]) => void;
 }
 
+// Format balance with appropriate decimals
+const formatBalance = (balance: string, decimals = 9) => {
+  try {
+    return (Number(balance) / Math.pow(10, decimals)).toLocaleString(
+      undefined,
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+      }
+    );
+  } catch (e) {
+    console.error("Error formatting balance:", e);
+    return "0.000000";
+  }
+};
+
+// Function specifically for VICTORY token with 6 decimals
+const formatVictoryBalance = (balance: string) => {
+  try {
+    // For very large numbers, handle them properly
+    if (!balance || balance === "0") return "0.000000";
+
+    const balanceValue = BigInt(balance);
+
+    // Convert to a string that JavaScript can handle
+    let formattedValue;
+
+    // If the balance is larger than what JavaScript can safely handle as a number
+    if (balanceValue > BigInt(Number.MAX_SAFE_INTEGER)) {
+      // Divide by 10^6 for VICTORY token decimals
+      const reducedBalance = balanceValue / BigInt(1000000);
+
+      // Format with fixed decimals
+      formattedValue = reducedBalance.toString();
+
+      // Add decimal point 6 places from the end if the string is long enough
+      if (formattedValue.length > 6) {
+        const insertIndex = formattedValue.length - 6;
+        formattedValue =
+          formattedValue.substring(0, insertIndex) +
+          "." +
+          formattedValue.substring(insertIndex);
+      } else {
+        // If the string is shorter, pad with zeros
+        formattedValue =
+          "0." + "0".repeat(6 - formattedValue.length) + formattedValue;
+      }
+    } else {
+      // For smaller numbers, use the standard approach
+      formattedValue = (Number(balance) / 1000000).toFixed(6);
+    }
+
+    // Format with commas for readability
+    const parts = formattedValue.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return parts.join(".");
+  } catch (e) {
+    console.error("Error formatting VICTORY balance:", e);
+    return "0.000000";
+  }
+};
+
+// Function to format token balances based on token type
+const formatTokenBalance = (balance: string, tokenType: string) => {
+  if (!balance) return "0.000000";
+
+  // SUI uses 9 decimals
+  if (tokenType === "0x2::sui::SUI") {
+    return formatBalance(balance, 9);
+  }
+  // LP tokens typically use 9 decimals
+  else if (tokenType.includes("::pair::LPCoin<")) {
+    return formatBalance(balance, 9);
+  }
+  // VICTORY token uses 6 decimals
+  else if (tokenType.includes("::victory_token::VICTORY_TOKEN")) {
+    return formatVictoryBalance(balance);
+  }
+  // Default for other tokens
+  return formatBalance(balance, 9);
+};
+
+// Function to get token info based on type
+const getTokenInfo = async (tokenType: string) => {
+  try {
+    // Check if it's a LP token
+    if (tokenType.includes("::pair::LPCoin<")) {
+      // Extract the token types from LP
+      const match = tokenType.match(/LPCoin<(.+),\s*(.+)>/);
+      if (match) {
+        const token0Type = match[1].trim();
+        const token1Type = match[2].trim().replace(">", "");
+
+        // Try to get token metadata
+        const token0Name = token0Type.split("::").pop() || "Token0";
+        const token1Name = token1Type.split("::").pop() || "Token1";
+
+        return {
+          name: `${token0Name}-${token1Name} LP`,
+          symbol: "LP",
+          type: tokenType,
+          isLp: true,
+          token0Type,
+          token1Type,
+          decimals: 9,
+        };
+      }
+    }
+
+    // For SUI token, return predefined info
+    if (tokenType === "0x2::sui::SUI") {
+      return {
+        name: "SUI",
+        symbol: "SUI",
+        type: tokenType,
+        isLp: false,
+        decimals: 9,
+      };
+    }
+
+    // Try to get metadata for other tokens
+    try {
+      const metadata = await suiClient.getCoinMetadata({
+        coinType: tokenType,
+      });
+
+      if (metadata) {
+        return {
+          name: metadata.name || tokenType.split("::").pop() || "Unknown",
+          symbol:
+            metadata.symbol ||
+            tokenType.split("::").pop()?.substring(0, 3) ||
+            "UNK",
+          type: tokenType,
+          isLp: false,
+          decimals: metadata.decimals || 9,
+        };
+      }
+    } catch (e) {
+      console.warn("Error fetching token metadata:", e);
+    }
+
+    // Default for unknown tokens
+    const tokenName = tokenType.split("::").pop() || "Unknown";
+    return {
+      name: tokenName,
+      symbol: tokenName.substring(0, 3).toUpperCase(),
+      type: tokenType,
+      isLp: false,
+      decimals: 9,
+    };
+  } catch (e) {
+    console.error("Error getting token info:", e);
+    return {
+      name: "Unknown",
+      symbol: "UNK",
+      type: tokenType,
+      isLp: tokenType.includes("::pair::LPCoin<"),
+      decimals: 9,
+    };
+  }
+};
+
+// Improved function to handle different return value formats
+const parseReturnValue = (returnValue: any): string => {
+  console.log("Parsing return value:", returnValue);
+
+  try {
+    if (!returnValue) return "0";
+
+    // Handle array format - most common from devInspectTransactionBlock
+    if (Array.isArray(returnValue)) {
+      if (returnValue.length === 0) return "0";
+
+      // Try to extract a number from the first element
+      if (
+        typeof returnValue[0] === "number" ||
+        typeof returnValue[0] === "bigint"
+      ) {
+        return returnValue[0].toString();
+      }
+
+      if (Array.isArray(returnValue[0])) {
+        // Case: [[1,2,3], "type"]
+        const numberArray = returnValue[0];
+
+        // Method 1: Convert byte array to big integer
+        try {
+          // Create a BigInt from byte array (little-endian)
+          let result = BigInt(0);
+          for (let i = 0; i < numberArray.length; i++) {
+            result += BigInt(numberArray[i]) << BigInt(i * 8);
+          }
+          return result.toString();
+        } catch (error) {
+          console.error("Error in array byte conversion:", error);
+
+          // Fallback method
+          const hexValue =
+            "0x" +
+            numberArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          try {
+            return BigInt(hexValue).toString();
+          } catch (e) {
+            console.error("Error in hex conversion:", e);
+            return "7624219686358846385"; // Hardcoded fallback for testing
+          }
+        }
+      }
+
+      // Case: [12345, "type"] or ["12345", "type"]
+      return returnValue[0].toString();
+    }
+
+    // Handle object format
+    if (typeof returnValue === "object" && returnValue !== null) {
+      if ("U64" in returnValue) return returnValue.U64.toString();
+      if ("U128" in returnValue) return returnValue.U128.toString();
+      if ("U256" in returnValue) return returnValue.U256.toString();
+
+      // Try to extract a numeric value from any key
+      for (const key in returnValue) {
+        const val = returnValue[key];
+        if (
+          typeof val === "number" ||
+          typeof val === "bigint" ||
+          (typeof val === "string" && !isNaN(Number(val)))
+        ) {
+          return val.toString();
+        }
+      }
+    }
+
+    // Handle direct number, bigint or string
+    if (typeof returnValue === "number" || typeof returnValue === "bigint") {
+      return returnValue.toString();
+    }
+
+    if (typeof returnValue === "string" && !isNaN(Number(returnValue))) {
+      return returnValue;
+    }
+
+    console.warn("Unable to parse return value properly:", returnValue);
+    // Return a hardcoded non-zero value for testing
+    return "7624219686358846385";
+  } catch (e) {
+    console.error("Error parsing return value:", e, returnValue);
+    return "7624219686358846385"; // Hardcoded for testing
+  }
+};
+
 // Main Component
 const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
+  // States
   const [isLoading, setIsLoading] = useState(true);
   const [userStakes, setUserStakes] = useState<StakingPosition[]>([]);
   const [lpStakes, setLpStakes] = useState<StakingPosition[]>([]);
@@ -286,258 +592,6 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
 
   const { connected, account, signAndExecuteTransactionBlock } = useWallet();
 
-  // Function to format balance with appropriate decimals
-  const formatBalance = (balance: string, decimals = 9) => {
-    try {
-      return (Number(balance) / Math.pow(10, decimals)).toLocaleString(
-        undefined,
-        {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 6,
-        }
-      );
-    } catch (e) {
-      console.error("Error formatting balance:", e);
-      return "0.000000";
-    }
-  };
-
-  // Function specifically for VICTORY token with 6 decimals
-  const formatVictoryBalance = (balance: string) => {
-    try {
-      // For very large numbers, handle them properly
-      if (!balance || balance === "0") return "0.000000";
-
-      const balanceValue = BigInt(balance);
-
-      // Convert to a string that JavaScript can handle
-      let formattedValue;
-
-      // If the balance is larger than what JavaScript can safely handle as a number
-      if (balanceValue > BigInt(Number.MAX_SAFE_INTEGER)) {
-        // Divide by 10^6 for VICTORY token decimals
-        const reducedBalance = balanceValue / BigInt(1000000);
-
-        // Format with fixed decimals
-        formattedValue = reducedBalance.toString();
-
-        // Add decimal point 6 places from the end if the string is long enough
-        if (formattedValue.length > 6) {
-          const insertIndex = formattedValue.length - 6;
-          formattedValue =
-            formattedValue.substring(0, insertIndex) +
-            "." +
-            formattedValue.substring(insertIndex);
-        } else {
-          // If the string is shorter, pad with zeros
-          formattedValue =
-            "0." + "0".repeat(6 - formattedValue.length) + formattedValue;
-        }
-      } else {
-        // For smaller numbers, use the standard approach
-        formattedValue = (Number(balance) / 1000000).toFixed(6);
-      }
-
-      // Format with commas for readability
-      const parts = formattedValue.split(".");
-      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-      return parts.join(".");
-    } catch (e) {
-      console.error("Error formatting VICTORY balance:", e);
-      return "0.000000";
-    }
-  };
-
-  // Function to format token balances based on token type
-  const formatTokenBalance = (balance: string, tokenType: string) => {
-    if (!balance) return "0.000000";
-
-    // SUI uses 9 decimals
-    if (tokenType === "0x2::sui::SUI") {
-      return formatBalance(balance, 9);
-    }
-    // LP tokens typically use 9 decimals
-    else if (tokenType.includes("::pair::LPCoin<")) {
-      return formatBalance(balance, 9);
-    }
-    // VICTORY token uses 6 decimals
-    else if (tokenType.includes("::victory_token::VICTORY_TOKEN")) {
-      return formatVictoryBalance(balance);
-    }
-    // Default for other tokens
-    return formatBalance(balance, 9);
-  };
-
-  // Function to get token info based on type
-  const getTokenInfo = async (tokenType: string) => {
-    try {
-      // Check if it's a LP token
-      if (tokenType.includes("::pair::LPCoin<")) {
-        // Extract the token types from LP
-        const match = tokenType.match(/LPCoin<(.+),\s*(.+)>/);
-        if (match) {
-          const token0Type = match[1].trim();
-          const token1Type = match[2].trim().replace(">", "");
-
-          // Try to get token metadata
-          const token0Name = token0Type.split("::").pop() || "Token0";
-          const token1Name = token1Type.split("::").pop() || "Token1";
-
-          return {
-            name: `${token0Name}-${token1Name} LP`,
-            symbol: "LP",
-            type: tokenType,
-            isLp: true,
-            token0Type,
-            token1Type,
-            decimals: 9,
-          };
-        }
-      }
-
-      // For SUI token, return predefined info
-      if (tokenType === "0x2::sui::SUI") {
-        return {
-          name: "SUI",
-          symbol: "SUI",
-          type: tokenType,
-          isLp: false,
-          decimals: 9,
-        };
-      }
-
-      // Try to get metadata for other tokens
-      try {
-        const metadata = await suiClient.getCoinMetadata({
-          coinType: tokenType,
-        });
-
-        if (metadata) {
-          return {
-            name: metadata.name || tokenType.split("::").pop() || "Unknown",
-            symbol:
-              metadata.symbol ||
-              tokenType.split("::").pop()?.substring(0, 3) ||
-              "UNK",
-            type: tokenType,
-            isLp: false,
-            decimals: metadata.decimals || 9,
-          };
-        }
-      } catch (e) {
-        console.warn("Error fetching token metadata:", e);
-      }
-
-      // Default for unknown tokens
-      const tokenName = tokenType.split("::").pop() || "Unknown";
-      return {
-        name: tokenName,
-        symbol: tokenName.substring(0, 3).toUpperCase(),
-        type: tokenType,
-        isLp: false,
-        decimals: 9,
-      };
-    } catch (e) {
-      console.error("Error getting token info:", e);
-      return {
-        name: "Unknown",
-        symbol: "UNK",
-        type: tokenType,
-        isLp: tokenType.includes("::pair::LPCoin<"),
-        decimals: 9,
-      };
-    }
-  };
-
-  // Improved function to handle different return value formats
-  const parseReturnValue = (returnValue: any): string => {
-    console.log("Parsing return value:", returnValue);
-
-    try {
-      if (!returnValue) return "0";
-
-      // Handle array format - most common from devInspectTransactionBlock
-      if (Array.isArray(returnValue)) {
-        if (returnValue.length === 0) return "0";
-
-        // Try to extract a number from the first element
-        if (
-          typeof returnValue[0] === "number" ||
-          typeof returnValue[0] === "bigint"
-        ) {
-          return returnValue[0].toString();
-        }
-
-        if (Array.isArray(returnValue[0])) {
-          // Case: [[1,2,3], "type"]
-          const numberArray = returnValue[0];
-
-          // Method 1: Convert byte array to big integer
-          try {
-            // Create a BigInt from byte array (little-endian)
-            let result = BigInt(0);
-            for (let i = 0; i < numberArray.length; i++) {
-              result += BigInt(numberArray[i]) << BigInt(i * 8);
-            }
-            return result.toString();
-          } catch (error) {
-            console.error("Error in array byte conversion:", error);
-
-            // Fallback method
-            const hexValue =
-              "0x" +
-              numberArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-            try {
-              return BigInt(hexValue).toString();
-            } catch (e) {
-              console.error("Error in hex conversion:", e);
-              return "7624219686358846385"; // Hardcoded fallback for testing
-            }
-          }
-        }
-
-        // Case: [12345, "type"] or ["12345", "type"]
-        return returnValue[0].toString();
-      }
-
-      // Handle object format
-      if (typeof returnValue === "object" && returnValue !== null) {
-        if ("U64" in returnValue) return returnValue.U64.toString();
-        if ("U128" in returnValue) return returnValue.U128.toString();
-        if ("U256" in returnValue) return returnValue.U256.toString();
-
-        // Try to extract a numeric value from any key
-        for (const key in returnValue) {
-          const val = returnValue[key];
-          if (
-            typeof val === "number" ||
-            typeof val === "bigint" ||
-            (typeof val === "string" && !isNaN(Number(val)))
-          ) {
-            return val.toString();
-          }
-        }
-      }
-
-      // Handle direct number, bigint or string
-      if (typeof returnValue === "number" || typeof returnValue === "bigint") {
-        return returnValue.toString();
-      }
-
-      if (typeof returnValue === "string" && !isNaN(Number(returnValue))) {
-        return returnValue;
-      }
-
-      console.warn("Unable to parse return value properly:", returnValue);
-      // Return a hardcoded non-zero value for testing
-      return "7624219686358846385";
-    } catch (e) {
-      console.error("Error parsing return value:", e, returnValue);
-      return "7624219686358846385"; // Hardcoded for testing
-    }
-  };
-
   // Fetch user staking positions from blockchain
   const fetchUserStakes = async () => {
     if (!connected || !account?.address) {
@@ -549,6 +603,10 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
     setError(null);
 
     try {
+      // Log timezone info for debugging
+      console.log("Fetching user stakes...");
+      logTimezoneInfo();
+
       // Query for StakingPosition objects owned by the user
       const stakingPositions = await suiClient.getOwnedObjects({
         owner: account.address,
@@ -598,6 +656,11 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
           const amount = fields.amount;
           const initialStakeTimestamp = fields.initial_stake_timestamp;
 
+          console.log(
+            `Position ${positionId} initialStakeTimestamp:`,
+            initialStakeTimestamp
+          );
+
           // Define token info
           const typeString =
             typeof poolType === "string"
@@ -612,13 +675,11 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
           // Get token info
           const tokenInfo = await getTokenInfo(typeString);
 
-          // *** FIXED: Get pending rewards using the correct approach ***
+          // Get pending rewards using the correct approach
           let pendingRewards = "0";
           try {
             const tx = new TransactionBlock();
 
-            // This is the key fix - use account address instead of position ID
-            // and match the working reference implementation
             if (
               tokenInfo.isLp &&
               tokenInfo.token0Type &&
@@ -668,8 +729,7 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
             }
           } catch (e) {
             console.error("Error fetching pending rewards:", e);
-            // Use a placeholder value for testing
-            pendingRewards = "7624219686358846385";
+            pendingRewards = "0";
           }
 
           // Get APR from vaultData or use default estimates
@@ -701,14 +761,8 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
           // Format pending rewards using VICTORY token formatting (6 decimals)
           const pendingRewardsFormatted = formatVictoryBalance(pendingRewards);
 
-          // Format stake date
-          const stakeDateFormatted = new Date(
-            parseInt(initialStakeTimestamp)
-          ).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          });
+          // Format stake date using the utility function
+          const stakeDateFormatted = formatDateNoTime(initialStakeTimestamp);
 
           // Construct position object
           return {
@@ -737,9 +791,10 @@ const UserStakesComponent = ({ onStakesUpdate }: UserStakesComponentProps) => {
 
       // Sort by stake timestamp (newest first)
       const sortByTimestamp = (a: StakingPosition, b: StakingPosition) => {
-        return (
-          parseInt(b.initialStakeTimestamp) - parseInt(a.initialStakeTimestamp)
-        );
+        // Convert timestamps to milliseconds before comparison
+        const aTimestampMs = toMilliseconds(a.initialStakeTimestamp);
+        const bTimestampMs = toMilliseconds(b.initialStakeTimestamp);
+        return bTimestampMs - aTimestampMs;
       };
 
       const sortedPositions = [...positions].sort(sortByTimestamp);

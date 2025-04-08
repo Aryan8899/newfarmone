@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { useWallet } from "@suiet/wallet-kit";
 import { suiClient } from "../../utils/suiClient";
 import { toast } from "sonner";
@@ -16,9 +17,17 @@ import {
   FaWallet,
   FaCircleNotch,
   FaPercentage,
+  FaEdit,
+  FaWater,
+  FaSpinner,
 } from "react-icons/fa";
 import { CONSTANTS, formatBalance } from "../../constants/addresses";
-import { TokenSelect } from "./TokenSelect"; // Adjust the import path as needed
+import { TokenSelect } from "./TokenSelect";
+import {
+  getTokenObjectId,
+  normalizeCoinType,
+  extractTokenTypesFromLP,
+} from "../../utils/tokenUtils";
 
 interface StakingComponentProps {
   initialMode?: string;
@@ -53,8 +62,17 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
   initialMode = "single",
   initialToken = "",
 }) => {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+
+  // Extract token params (try both formats)
+  const token0Param = searchParams.get("token0");
+  const token1Param = searchParams.get("token1");
+  const typeParam = searchParams.get("token") || initialToken;
+
+  const [loadingParams, setLoadingParams] = useState(true);
   const [stakeMode, setStakeMode] = useState(
-    initialMode === "lp" ? "lp" : "single"
+    initialMode === "lp" || (token0Param && token1Param) ? "lp" : "single"
   );
 
   // For single asset staking
@@ -71,6 +89,8 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
   // Common state
   const [stakeAmount, setStakeAmount] = useState("");
   const [stakePercentage, setStakePercentage] = useState(100);
+  const [customPercentage, setCustomPercentage] = useState(""); // For custom percentage input
+  const [isCustomPercentage, setIsCustomPercentage] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [calculationVisible, setCalculationVisible] = useState(false);
   const [aprEstimate, setAprEstimate] = useState<string>("0");
@@ -110,199 +130,283 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       : { token0Type: type1, token1Type: type0 };
   };
 
-  // Initialize component with initialToken if providedz
+  // Function to get coin type from object ID
+  const getCoinTypeFromObjectId = async (
+    objectId: string
+  ): Promise<string | null> => {
+    try {
+      console.log(`Getting coin type for object ID: ${objectId}`);
+      const objectData = await suiClient.getObject({
+        id: objectId,
+        options: { showType: true },
+      });
+
+      if (objectData?.data?.type) {
+        const type = objectData.data.type;
+        console.log(`Object type: ${type}`);
+
+        // Extract the actual coin type from Coin<TYPE>
+        const match = type.match(/Coin<([^>]+)>/);
+        if (match) {
+          console.log(`Extracted coin type: ${match[1]}`);
+          return match[1];
+        }
+        return type;
+      }
+      console.warn(`No type found for object ID: ${objectId}`);
+      return null;
+    } catch (error) {
+      console.error("Error getting coin type:", error);
+      return null;
+    }
+  };
+
+  // Handle loading from URL parameters or initialToken
   useEffect(() => {
-    console.log("initialToken received in StakingComponent:", initialToken);
-    console.log("Effect triggered → initialToken:", initialToken, "connected:", connected);
-  
-    const initializeWithToken = async () => {
-      if (!initialToken || !account?.address) return;
+    console.log("Effect triggered with parameters:", {
+      token0: token0Param,
+      token1: token1Param,
+      type: typeParam,
+      connected,
+      initialToken,
+    });
 
+    if (!account?.address) {
+      console.log("Account not connected, skipping token initialization");
+      setLoadingParams(false);
+      return;
+    }
+
+    const initializeWithTokens = async () => {
+      setLoadingParams(true);
       try {
-        // Determine if it's an LP token or single token
-        const isLp = initialToken.includes("::pair::LPCoin<");
-        console.log("Is LP token?", isLp);
-
-        if (isLp) {
+        // Case 1: We have both token0 and token1 parameters (object IDs)
+        if (token0Param && token1Param) {
+          console.log("Initializing with token0 and token1 object IDs");
           setStakeMode("lp");
 
-          // Extract the token types from LP token
-          const match = initialToken.match(/LPCoin<([^,]+),\s*([^>]+)>/);
+          // Get coin types from object IDs
+          const [token0Type, token1Type] = await Promise.all([
+            getCoinTypeFromObjectId(token0Param),
+            getCoinTypeFromObjectId(token1Param),
+          ]);
 
-          if (match) {
-            const normalizeAddress = (type: string) => {
-              const parts = type.split("::");
-              if (parts.length === 3 && !parts[0].startsWith("0x")) {
-                parts[0] = `0x${parts[0]}`;
-              }
-              return parts.join("::");
-            };
-        
-            // ✅ Apply normalization
-            const token0Type = normalizeAddress(match[1].trim());
-            const token1Type = normalizeAddress(match[2].trim());
-        
-            console.log("➡️ token0Type (normalized):", token0Type);
-            console.log("➡️ token1Type (normalized):", token1Type);
-        
-
-
-            console.log("LP detected:", isLp);
-console.log("Setting token0:", token0Type);
-console.log("Setting token1:", token1Type);
-
-console.log("Single token detected:", initialToken);
-
-console.log("🔥 Auto-selecting Token1:", token1?.id);
-
-
-            // Try to get token metadata
-            console.log("Fetching metadata for token0:", token0Type);
-            const token0Metadata = await suiClient
-              .getCoinMetadata({
-                coinType: token0Type,
-              })
-              .catch(() => null);
-
-              console.log("Fetching metadata for token1:", token1Type);
-
-              
-
-              
-            const token1Metadata = await suiClient
-              .getCoinMetadata({
-                coinType: token1Type,
-              })
-              .catch(() => null);
-
-
-              console.log("the rest is ",token1Metadata)
-
-              console.log("the 2nd rest is",token0Metadata)
-
-            // Set token0 and token1
-
-            console.log("➡️ token0Type (raw):", token0Type);
-
-
-            if (token0Metadata) {
-              setToken0({
-                id: token0Type,
-                name:
-                  token0Metadata.name ||
-                  token0Type.split("::").pop() ||
-                  "Unknown",
-                symbol:
-                  token0Metadata.symbol ||
-                  token0Type.split("::").pop() ||
-                  "Unknown",
-                type: token0Type,
-                decimals: token0Metadata.decimals || 9,
-              });
-            }
-
-            setToken1({
-              id: token1Type,
-              name:
-                token1Metadata?.name || token1Type.split("::").pop() || "Unknown",
-              symbol:
-                token1Metadata?.symbol || token1Type.split("::").pop() || "Unknown",
-              type: token1Type,
-              decimals: token1Metadata?.decimals || 9,
-            });
-            
-            
-
-            console.log("🔥 Auto-selectingggg Token1:", token1?.id);
-            console.log("🔥 Auto-selectingggg Token2:", token1?.id); 
-
-            // Set LP info
-            setLpInfo({
-              id: initialToken, // <-- This is the correct full LP token type
-              token0Type,
-              token1Type,
-            });
-            
-            console.log("✅ lpInfo.id set to:", initialToken);
-
-
-            // Fetch LP token balance
-            fetchLpBalance(token0Type, token1Type);
+          if (!token0Type || !token1Type) {
+            console.error("Failed to get token types from object IDs");
+            setLoadingParams(false);
+            return;
           }
-        } else {
+
+          console.log("Retrieved token types:", { token0Type, token1Type });
+
+          // Get token metadata
+          const [token0Metadata, token1Metadata] = await Promise.all([
+            suiClient
+              .getCoinMetadata({ coinType: token0Type })
+              .catch(() => null),
+            suiClient
+              .getCoinMetadata({ coinType: token1Type })
+              .catch(() => null),
+          ]);
+
+          // Set token0
+          setToken0({
+            id: token0Param,
+            name:
+              token0Metadata?.name || token0Type.split("::").pop() || "Unknown",
+            symbol:
+              token0Metadata?.symbol ||
+              token0Type.split("::").pop() ||
+              "Unknown",
+            type: token0Type,
+            decimals: token0Metadata?.decimals || 9,
+          });
+
+          // Set token1
+          setToken1({
+            id: token1Param,
+            name:
+              token1Metadata?.name || token1Type.split("::").pop() || "Unknown",
+            symbol:
+              token1Metadata?.symbol ||
+              token1Type.split("::").pop() ||
+              "Unknown",
+            type: token1Type,
+            decimals: token1Metadata?.decimals || 9,
+          });
+
+          // Set LP info and fetch balance
+          const { token0Type: sortedToken0, token1Type: sortedToken1 } =
+            await sortTokens(token0Type, token1Type);
+
+          setLpInfo({
+            token0Type: sortedToken0,
+            token1Type: sortedToken1,
+            name: `${
+              token0Metadata?.symbol ||
+              token0Type.split("::").pop() ||
+              "Unknown"
+            }-${
+              token1Metadata?.symbol ||
+              token1Type.split("::").pop() ||
+              "Unknown"
+            } LP`,
+            symbol: "LP",
+          });
+
+          await fetchLpBalance(sortedToken0, sortedToken1);
+        }
+        // Case 2: We have an LP type string
+        else if (typeParam && typeParam.includes("::pair::LPCoin<")) {
+          console.log("Initializing with LP token type string");
+          setStakeMode("lp");
+
+          // Extract token types from LP
+          const tokens = extractTokenTypesFromLP(typeParam);
+          if (!tokens) {
+            console.error("Failed to extract token types from LP token string");
+            setLoadingParams(false);
+            return;
+          }
+
+          const { token0Type, token1Type } = tokens;
+          console.log("Extracted token types:", { token0Type, token1Type });
+
+          // Try to get object IDs for both token types
+          const [token0Id, token1Id] = await Promise.all([
+            getTokenObjectId(token0Type, suiClient, account.address),
+            getTokenObjectId(token1Type, suiClient, account.address),
+          ]);
+
+          // Get token metadata
+          const [token0Metadata, token1Metadata] = await Promise.all([
+            suiClient
+              .getCoinMetadata({ coinType: token0Type })
+              .catch(() => null),
+            suiClient
+              .getCoinMetadata({ coinType: token1Type })
+              .catch(() => null),
+          ]);
+
+          // Set token0
+          setToken0({
+            id: token0Id || token0Type,
+            name:
+              token0Metadata?.name || token0Type.split("::").pop() || "Unknown",
+            symbol:
+              token0Metadata?.symbol ||
+              token0Type.split("::").pop() ||
+              "Unknown",
+            type: token0Type,
+            decimals: token0Metadata?.decimals || 9,
+          });
+
+          // Set token1
+          setToken1({
+            id: token1Id || token1Type,
+            name:
+              token1Metadata?.name || token1Type.split("::").pop() || "Unknown",
+            symbol:
+              token1Metadata?.symbol ||
+              token1Type.split("::").pop() ||
+              "Unknown",
+            type: token1Type,
+            decimals: token1Metadata?.decimals || 9,
+          });
+
+          // Set LP info and fetch balance
+          const { token0Type: sortedToken0, token1Type: sortedToken1 } =
+            await sortTokens(token0Type, token1Type);
+
+          setLpInfo({
+            id: typeParam,
+            token0Type: sortedToken0,
+            token1Type: sortedToken1,
+            name: `${
+              token0Metadata?.symbol ||
+              token0Type.split("::").pop() ||
+              "Unknown"
+            }-${
+              token1Metadata?.symbol ||
+              token1Type.split("::").pop() ||
+              "Unknown"
+            } LP`,
+            symbol: "LP",
+          });
+
+          await fetchLpBalance(sortedToken0, sortedToken1);
+        }
+        // Case 3: Single token case (type string or object ID)
+        else if (typeParam) {
+          console.log("Initializing with single token:", typeParam);
           setStakeMode("single");
 
-          // Try to get token metadata
+          // Check if it's a type string or object ID
+          const isTypeString = typeParam.includes("::");
+          let tokenType = isTypeString ? typeParam : null;
+
+          // If it's an object ID, get the coin type
+          if (!isTypeString) {
+            tokenType = await getCoinTypeFromObjectId(typeParam);
+          }
+
+          if (!tokenType) {
+            console.error("Failed to determine token type");
+            setLoadingParams(false);
+            return;
+          }
+
+          // Try to get object ID for this token type if we don't have it
+          const tokenId = isTypeString
+            ? await getTokenObjectId(tokenType, suiClient, account.address)
+            : typeParam;
+
+          // Get token metadata
           const metadata = await suiClient
-            .getCoinMetadata({
-              coinType: initialToken,
-            })
+            .getCoinMetadata({ coinType: tokenType })
             .catch(() => null);
 
-            if (!metadata) {
-              console.warn("⚠️ No metadata returned for", initialToken);
-            }
-            
+          if (!metadata) {
+            console.warn("⚠️ No metadata returned for", tokenType);
+          }
 
-            console.log("the tokeninfor is",metadata)
+          // Create token info
+          const tokenInfo: TokenInfo = {
+            id: tokenId || typeParam,
+            name: metadata?.name || tokenType.split("::").pop() || "Unknown",
+            symbol:
+              metadata?.symbol || tokenType.split("::").pop() || "Unknown",
+            type: tokenType,
+            decimals: metadata?.decimals ?? 9,
+          };
 
-            const normalizeType = (type: string) =>
-              type.startsWith("0x") ? type : `0x${type}`;
-
-            const normalizedToken = normalizeType(initialToken);
-          
-            const tokenInfo: TokenInfo = {
-  id: normalizedToken,
-  name: metadata?.name || normalizedToken.split("::").pop() || "Unknown",
-  symbol: metadata?.symbol || normalizedToken.split("::").pop() || "Unknown",
-  type: normalizedToken,
-  decimals: metadata?.decimals ?? 9,
-};
-            
-            if (!metadata) {
-              console.warn("⚠️ No metadata returned for", initialToken);
-            }
-            
-            console.log("✅ Setting token info with fallback:", tokenInfo);
-            setSingleToken(tokenInfo);
-            fetchTokenBalance(normalizedToken);
-
-            
-
-
-            
-
-            console.log("Setting single token:", tokenInfo);
-
-
-            // setSingleToken(tokenInfo);
-
-            // // Fetch token balance
-            // fetchTokenBalance(initialToken);
-          
+          console.log("✅ Setting single token info:", tokenInfo);
+          setSingleToken(tokenInfo);
+          await fetchTokenBalance(tokenType);
         }
       } catch (error) {
-        console.error("Error initializing with token:", error);
+        console.error("Error initializing tokens:", error);
+        toast.error("Failed to load token information");
+      } finally {
+        setLoadingParams(false);
       }
     };
 
-    initializeWithToken();
-  }, [initialToken, account?.address]);
-
-
-
-  
+    initializeWithTokens();
+  }, [token0Param, token1Param, typeParam, account?.address, initialToken]);
 
   // Calculate stake amount based on percentage
   useEffect(() => {
-    if (stakeMode === "single" && singleToken) {
-      const amount =
-        (BigInt(singleTokenBalance) * BigInt(stakePercentage)) / BigInt(100);
-      setStakeAmount(amount.toString());
-    } else if (stakeMode === "lp" && lpInfo) {
-      const amount =
-        (BigInt(lpBalance) * BigInt(stakePercentage)) / BigInt(100);
-      setStakeAmount(amount.toString());
+    if (!isCustomPercentage) {
+      if (stakeMode === "single" && singleToken) {
+        const amount =
+          (BigInt(singleTokenBalance) * BigInt(stakePercentage)) / BigInt(100);
+        setStakeAmount(amount.toString());
+      } else if (stakeMode === "lp" && lpInfo) {
+        const amount =
+          (BigInt(lpBalance) * BigInt(stakePercentage)) / BigInt(100);
+        setStakeAmount(amount.toString());
+      }
     }
   }, [
     stakePercentage,
@@ -311,7 +415,41 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     stakeMode,
     singleToken,
     lpInfo,
+    isCustomPercentage,
   ]);
+
+  // Handle custom percentage change
+  const handleCustomPercentageChange = (value: string) => {
+    // Remove non-numeric characters
+    const numericValue = value.replace(/[^0-9.]/g, "");
+    setCustomPercentage(numericValue);
+
+    // Convert to number and validate
+    const percentage = parseFloat(numericValue);
+    if (!isNaN(percentage) && percentage >= 0 && percentage <= 100) {
+      // Calculate amount based on custom percentage
+      if (stakeMode === "single" && singleToken) {
+        const amount =
+          (BigInt(singleTokenBalance) * BigInt(Math.floor(percentage))) /
+          BigInt(100);
+        setStakeAmount(amount.toString());
+      } else if (stakeMode === "lp" && lpInfo) {
+        const amount =
+          (BigInt(lpBalance) * BigInt(Math.floor(percentage))) / BigInt(100);
+        setStakeAmount(amount.toString());
+      }
+    }
+  };
+
+  // Toggle custom percentage input
+  const toggleCustomPercentage = () => {
+    setIsCustomPercentage(!isCustomPercentage);
+    if (!isCustomPercentage) {
+      setCustomPercentage(stakePercentage.toString());
+    } else {
+      setStakePercentage(parseInt(customPercentage) || 100);
+    }
+  };
 
   // Fetch APR estimate from farm contract
   const fetchAprEstimate = async (tokenType: string) => {
@@ -365,10 +503,15 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     if (!account?.address) return;
 
     try {
+      console.log(`Fetching balance for token type: ${tokenType}`);
+
+      // Normalize token type
+      const normalizedType = normalizeCoinType(tokenType);
+
       // Get coins of the specific type
       const coins = await suiClient.getCoins({
         owner: account.address,
-        coinType: tokenType,
+        coinType: normalizedType,
       });
 
       // Calculate total balance
@@ -377,10 +520,13 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
         BigInt(0)
       );
 
+      console.log(
+        `Found balance for ${normalizedType}: ${totalBalance.toString()}`
+      );
       setSingleTokenBalance(totalBalance.toString());
 
       // Fetch APR for this token
-      fetchAprEstimate(tokenType);
+      fetchAprEstimate(normalizedType);
     } catch (error) {
       console.error(`Error fetching balance for ${tokenType}:`, error);
       setSingleTokenBalance("0");
@@ -392,28 +538,25 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     if (!account?.address) return;
 
     try {
+      console.log(
+        `Fetching LP balance for token pair: ${token0Type}, ${token1Type}`
+      );
+
       // Sort tokens first to maintain consistency
       const { token0Type: sortedToken0, token1Type: sortedToken1 } =
         await sortTokens(token0Type, token1Type);
 
+      const normalizedToken0 = normalizeCoinType(sortedToken0);
+      const normalizedToken1 = normalizeCoinType(sortedToken1);
 
-        const normalizeType = (type: string) =>
-          type.startsWith("0x") ? type : `0x${type}`;
-        
-    
-        const normalizedToken0 = normalizeType(sortedToken0);
-        const normalizedToken1 = normalizeType(sortedToken1);
-    
-        console.log("sortedToken0:", normalizedToken0);
-        console.log("sortedToken1:", normalizedToken1);
-        console.log("PACKAGE_ID:", CONSTANTS.PACKAGE_ID);
-        console.log("MODULES.PAIR:", CONSTANTS.MODULES.PAIR);
-    
-        // Construct LP token type
-        const lpTokenType = `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.PAIR}::LPCoin<${normalizedToken0}, ${normalizedToken1}>`;
-    
-      // use the full LP type passed as prop
+      console.log("Normalized token types:", {
+        token0: normalizedToken0,
+        token1: normalizedToken1,
+      });
 
+      // Construct LP token type
+      const lpTokenType = `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.PAIR}::LPCoin<${normalizedToken0}, ${normalizedToken1}>`;
+      console.log(`Constructed LP token type: ${lpTokenType}`);
 
       // Get LP coins
       const coins = await suiClient.getCoins({
@@ -427,27 +570,31 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
         BigInt(0)
       );
 
+      console.log(`Found LP balance: ${totalBalance.toString()}`);
       setLpBalance(totalBalance.toString());
       setLpTokens(coins.data);
 
-      // Set LP info
-      setLpInfo({
-        token0Type: sortedToken0,
-        token1Type: sortedToken1,
-        balance: totalBalance.toString(),
-        name: `${sortedToken0.split("::").pop()}-${sortedToken1
-          .split("::")
-          .pop()} LP`,
-        symbol: "LP",
-      });
-
-      
+      // Set LP info if not already set
+      if (
+        !lpInfo ||
+        lpInfo.token0Type !== normalizedToken0 ||
+        lpInfo.token1Type !== normalizedToken1
+      ) {
+        setLpInfo({
+          token0Type: normalizedToken0,
+          token1Type: normalizedToken1,
+          balance: totalBalance.toString(),
+          name: `${sortedToken0.split("::").pop()}-${sortedToken1
+            .split("::")
+            .pop()} LP`,
+          symbol: "LP",
+        });
+      }
 
       // Fetch APR for this LP token
       fetchAprEstimate(lpTokenType);
     } catch (error) {
       console.error(`Error fetching LP balance:`, error);
-      
       setLpBalance("0");
       setLpTokens([]);
     }
@@ -460,9 +607,11 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
     allObjectIds: string[];
     coinType: string;
   }) => {
-
     if (!tokenInfo?.coinType) {
-      console.error("❌ Invalid tokenInfo passed to handleSingleTokenSelect:", tokenInfo);
+      console.error(
+        "❌ Invalid tokenInfo passed to handleSingleTokenSelect:",
+        tokenInfo
+      );
       return;
     }
     // Get token metadata to create TokenInfo object
@@ -658,97 +807,127 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
 
       if (stakeMode === "single" && singleToken) {
         // For single asset staking
-        // Get coins to use for staking
-        const coins = await suiClient.getCoins({
-          owner: account.address,
-          coinType: singleToken.type,
-        });
+        const isSui = singleToken.type === "0x2::sui::SUI";
 
-        if (coins.data.length === 0) {
-          throw new Error(`No coins found for token ${singleToken.symbol}`);
-        }
+        if (isSui) {
+          // Special handling for SUI token
+          console.log("Handling SUI token staking with special logic");
 
-        // Find coins to use
-        const targetAmount = BigInt(stakeAmount);
-        const selectedCoins = findOptimalCoins(coins.data, targetAmount);
-
-        if (selectedCoins.length === 0) {
-          throw new Error(
-            `Insufficient balance: needed ${formatBalance(
-              targetAmount.toString(),
-              singleToken.decimals
-            )}, have ${formatBalance(singleTokenBalance, singleToken.decimals)}`
-          );
-        }
-
-        // Create coin to use in transaction
-        let stakeCoin;
-        if (
-          selectedCoins.length === 1 &&
-          BigInt(selectedCoins[0].balance) === targetAmount
-        ) {
-          // Use the coin directly if it has the exact amount
-          stakeCoin = tx.object(selectedCoins[0].coinObjectId);
-        } else if (selectedCoins.length === 1) {
-          // Split the coin if it has more than needed
-          stakeCoin = tx.splitCoins(tx.object(selectedCoins[0].coinObjectId), [
-            tx.pure.u64(targetAmount.toString()),
+          // For SUI, we can use tx.splitCoins(tx.gas, [amount]) directly
+          const stakeCoin = tx.splitCoins(tx.gas, [
+            tx.pure.u64(stakeAmount.toString()),
           ])[0];
+
+          // Add stake_single call for SUI
+          tx.moveCall({
+            target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
+            arguments: [
+              tx.object(CONSTANTS.FARM_ID),
+              stakeCoin,
+              tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
+            ],
+            typeArguments: [singleToken.type],
+          });
         } else {
-          // Merge multiple coins and then split if needed
-          const primaryCoin = tx.object(selectedCoins[0].coinObjectId);
-          const otherCoins = selectedCoins
-            .slice(1)
-            .map((coin) => tx.object(coin.coinObjectId));
-          tx.mergeCoins(primaryCoin, otherCoins);
+          // For non-SUI tokens, use regular approach
+          // Get coins to use for staking
+          const coins = await suiClient.getCoins({
+            owner: account.address,
+            coinType: singleToken.type,
+          });
 
-          const totalSelected = selectedCoins.reduce(
-            (sum, coin) => sum + BigInt(coin.balance),
-            BigInt(0)
-          );
-
-          if (totalSelected > targetAmount) {
-            stakeCoin = tx.splitCoins(primaryCoin, [
-              tx.pure.u64(targetAmount.toString()),
-            ])[0];
-          } else {
-            stakeCoin = primaryCoin;
+          if (coins.data.length === 0) {
+            throw new Error(`No coins found for token ${singleToken.symbol}`);
           }
-        }
 
-        // Add stake_single call
-        tx.moveCall({
-          target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
-          arguments: [
-            tx.object(CONSTANTS.FARM_ID),
-            stakeCoin,
-            tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
-          ],
-          typeArguments: [singleToken.type],
-        });
+          // Find coins to use
+          const targetAmount = BigInt(stakeAmount);
+          const selectedCoins = findOptimalCoins(coins.data, targetAmount);
+
+          if (selectedCoins.length === 0) {
+            throw new Error(
+              `Insufficient balance: needed ${formatBalance(
+                targetAmount.toString(),
+                singleToken.decimals
+              )}, have ${formatBalance(
+                singleTokenBalance,
+                singleToken.decimals
+              )}`
+            );
+          }
+
+          // Create coin to use in transaction
+          let stakeCoin;
+          if (
+            selectedCoins.length === 1 &&
+            BigInt(selectedCoins[0].balance) === targetAmount
+          ) {
+            // Use the coin directly if it has the exact amount
+            stakeCoin = tx.object(selectedCoins[0].coinObjectId);
+          } else if (selectedCoins.length === 1) {
+            // Split the coin if it has more than needed
+            stakeCoin = tx.splitCoins(
+              tx.object(selectedCoins[0].coinObjectId),
+              [tx.pure.u64(targetAmount.toString())]
+            )[0];
+          } else {
+            // Merge multiple coins and then split if needed
+            const primaryCoin = tx.object(selectedCoins[0].coinObjectId);
+            const otherCoins = selectedCoins
+              .slice(1)
+              .map((coin) => tx.object(coin.coinObjectId));
+            tx.mergeCoins(primaryCoin, otherCoins);
+
+            const totalSelected = selectedCoins.reduce(
+              (sum, coin) => sum + BigInt(coin.balance),
+              BigInt(0)
+            );
+
+            if (totalSelected > targetAmount) {
+              stakeCoin = tx.splitCoins(primaryCoin, [
+                tx.pure.u64(targetAmount.toString()),
+              ])[0];
+            } else {
+              stakeCoin = primaryCoin;
+            }
+          }
+
+          // Add stake_single call for non-SUI tokens
+          tx.moveCall({
+            target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
+            arguments: [
+              tx.object(CONSTANTS.FARM_ID),
+              stakeCoin,
+              tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
+            ],
+            typeArguments: [singleToken.type],
+          });
+        }
       } else if (stakeMode === "lp" && lpInfo && token0 && token1) {
         // Validate inputs
-        console.log('LP Tokens:', lpTokens);
-        console.log('LP Info:', lpInfo);
-        console.log('Stake Amount:', stakeAmount);
-      
+        console.log("LP Tokens:", lpTokens);
+        console.log("LP Info:", lpInfo);
+        console.log("Stake Amount:", stakeAmount);
+
         // Ensure lpTokens exists and is an array
         const lpTokensArray = lpTokens || [];
-      
+
         if (lpTokensArray.length === 0) {
           throw new Error(
             `No LP tokens found for ${token0.symbol}-${token1.symbol} pair`
           );
         }
-      
+
         // Find coins to use
         const targetAmount = BigInt(stakeAmount);
-        
+
         // Add a fallback for findOptimalCoins
-        const selectedCoins = findOptimalCoins 
+        const selectedCoins = findOptimalCoins
           ? findOptimalCoins(lpTokensArray, targetAmount)
-          : lpTokensArray.filter(token => BigInt(token.balance) >= targetAmount);
-      
+          : lpTokensArray.filter(
+              (token) => BigInt(token.balance) >= targetAmount
+            );
+
         if (!selectedCoins || selectedCoins.length === 0) {
           throw new Error(
             `Insufficient LP token balance: needed ${formatBalance(
@@ -757,51 +936,58 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
             )}, have ${formatBalance(lpBalance, 9)}`
           );
         }
-      
+
         // Create LP coin to use in transaction
         let lpCoin = [];
         if (selectedCoins.length === 1) {
           // Use the coin directly if it has the exact amount
           const singleLpCoin = selectedCoins[0];
           const singleLpBalance = BigInt(singleLpCoin.balance);
-      
+
           const lpObject = tx.object(singleLpCoin.coinObjectId);
-      
+
           // If the coin has exactly what we need, use it directly
           // Otherwise split it to get the exact amount
           if (singleLpBalance === targetAmount) {
             lpCoin = [lpObject];
           } else {
-            const splitCoin = tx.splitCoins(lpObject, [tx.pure.u64(targetAmount.toString())])[0];
+            const splitCoin = tx.splitCoins(lpObject, [
+              tx.pure.u64(targetAmount.toString()),
+            ])[0];
             lpCoin = [splitCoin];
           }
         } else {
           // We need multiple LP coins
           // First merge all coins into the first one
           const primaryLpCoin = tx.object(selectedCoins[0].coinObjectId);
-          const otherLpCoins = selectedCoins.slice(1).map(coin => tx.object(coin.coinObjectId));
-      
+          const otherLpCoins = selectedCoins
+            .slice(1)
+            .map((coin) => tx.object(coin.coinObjectId));
+
           tx.mergeCoins(primaryLpCoin, otherLpCoins);
-      
+
           // Calculate total balance of all selected coins
           const totalSelected = selectedCoins.reduce(
-            (sum, coin) => sum + BigInt(coin.balance), 0n
+            (sum, coin) => sum + BigInt(coin.balance),
+            0n
           );
-      
+
           // If total is more than needed, split to get exact amount
           if (totalSelected > targetAmount) {
-            const splitCoin = tx.splitCoins(primaryLpCoin, [tx.pure.u64(targetAmount.toString())])[0];
+            const splitCoin = tx.splitCoins(primaryLpCoin, [
+              tx.pure.u64(targetAmount.toString()),
+            ])[0];
             lpCoin = [splitCoin];
           } else {
             lpCoin = [primaryLpCoin];
           }
         }
-      
+
         // Create the vector for LP coins
         const vectorArg = tx.makeMoveVec({
-          objects: lpCoin // Use 'objects' instead of 'elements'
+          objects: lpCoin, // Use 'objects' instead of 'elements'
         });
-      
+
         // Build stake_lp transaction with proper arguments
         tx.moveCall({
           target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_lp`,
@@ -810,16 +996,16 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
             tx.object(CONSTANTS.FARM_ID),
             vectorArg,
             tx.pure.u256(targetAmount.toString()), // Changed to u256
-            tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID)
-          ]
+            tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
+          ],
         });
-      
+
         console.log("Transaction Args:", {
           farmId: CONSTANTS.FARM_ID,
           vectorArg,
           targetAmount: targetAmount.toString(),
           treasuryCapId: CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID,
-          typeArgs: [lpInfo.token0Type, lpInfo.token1Type]
+          typeArgs: [lpInfo.token0Type, lpInfo.token1Type],
         });
       } else {
         throw new Error("Please select valid tokens to stake");
@@ -847,21 +1033,6 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
       setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    console.log("initialToken received in StakingComponent:", initialToken);
-
-    
-  }, [initialToken]);
-
-  
-
-  useEffect(() => {
-    console.log("🔥 Auto-selecting Token0:", token0?.id);
-    console.log("🔥 Auto-selecting Token1:", token1?.id);
-  }, [token0, token1]);
-  
-  
 
   // Calculate estimated rewards
   const calculateRewards = () => {
@@ -915,6 +1086,66 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
   // Get estimated rewards
   const rewards = calculateRewards();
 
+  // Function to create URL with query parameters for liquidity page
+  const getLiquidityUrl = () => {
+    if (!token0 || !token1) {
+      return "https://testthing2.vercel.app/#/addliquidity";
+    }
+
+    // Create URL with token IDs as query parameters
+    const params = new URLSearchParams();
+
+    // For token0, prefer the ID over the type
+    if (token0.id && !token0.id.includes("::")) {
+      params.append("token0", token0.id);
+    } else if (token0.type) {
+      // Try to get object ID dynamically if we have a type
+      getTokenObjectId(token0.type, suiClient, account?.address || "")
+        .then((id) => {
+          if (id)
+            window.history.replaceState(
+              {},
+              "",
+              `https://testthing2.vercel.app/#/addliquidity?${new URLSearchParams(
+                {
+                  ...Object.fromEntries(params),
+                  token0: id,
+                }
+              ).toString()}`
+            );
+        })
+        .catch(console.error);
+
+      params.append("token0", token0.type);
+    }
+
+    // For token1, prefer the ID over the type
+    if (token1.id && !token1.id.includes("::")) {
+      params.append("token1", token1.id);
+    } else if (token1.type) {
+      // Try to get object ID dynamically if we have a type
+      getTokenObjectId(token1.type, suiClient, account?.address || "")
+        .then((id) => {
+          if (id)
+            window.history.replaceState(
+              {},
+              "",
+              `https://testthing2.vercel.app/#/addliquidity?${new URLSearchParams(
+                {
+                  ...Object.fromEntries(params),
+                  token1: id,
+                }
+              ).toString()}`
+            );
+        })
+        .catch(console.error);
+
+      params.append("token1", token1.type);
+    }
+
+    return `https://testthing2.vercel.app/#/addliquidity?${params.toString()}`;
+  };
+
   return (
     <div className="card-bg-premium rounded-lg shadow p-6">
       <div className="flex items-center gap-3 mb-6">
@@ -925,487 +1156,614 @@ console.log("🔥 Auto-selecting Token1:", token1?.id);
         </h2>
       </div>
 
-      {/* Toggle between LP and Single asset staking */}
-      <div className="flex mb-6 bg-blue-900/30 rounded-lg p-1">
-        <button
-          onClick={() => setStakeMode("single")}
-          className={`flex-1 py-3 text-center rounded-md transition-all duration-300 ${
-            stakeMode === "single"
-              ? "bg-blue-600 text-white"
-              : "text-blue-300 hover:bg-blue-800/60"
-          }`}
-        >
-          <div className="flex items-center justify-center gap-2">
-            <FaCoins
-              className={
-                stakeMode === "single" ? "text-yellow-400" : "text-blue-300"
-              }
-            />
-            <span>Single Token</span>
+      {/* Loading indicator while initializing tokens */}
+      {loadingParams && (
+        <div className="flex justify-center items-center p-8">
+          <div className="flex flex-col items-center gap-3">
+            <FaSpinner className="text-2xl text-yellow-400 animate-spin" />
+            <p className="text-blue-300">Loading token information...</p>
           </div>
-        </button>
-        <button
-          onClick={() => setStakeMode("lp")}
-          className={`flex-1 py-3 text-center rounded-md transition-all duration-300 ${
-            stakeMode === "lp"
-              ? "bg-blue-600 text-white"
-              : "text-blue-300 hover:bg-blue-800/60"
-          }`}
-        >
-          <div className="flex items-center justify-center gap-2">
-            <FaExchangeAlt
-              className={
-                stakeMode === "lp" ? "text-yellow-400" : "text-blue-300"
-              }
-            />
-            <span>LP Token</span>
-          </div>
-        </button>
-      </div>
+        </div>
+      )}
 
-      <div className="space-y-6">
-        {stakeMode === "single" ? (
-          // Single Token Staking
-          <>
-            <div className="card-bg-premium-gold p-5 rounded-xl">
-              <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
-                <FaCoins className="text-yellow-400" />
-                <span>Select Token to Stake</span>
-              </h3>
-
-              <div className="mb-4">
-              <TokenSelect
-  label="Choose Token"
-  onSelect={handleSingleTokenSelect}
-  includeLP={false}
-  autoLoad={false}
-  selectedTokenId={singleToken?.id || initialToken}
-/>
-
-
+      {!loadingParams && (
+        <>
+          {/* Toggle between LP and Single asset staking */}
+          <div className="flex mb-6 bg-blue-900/30 rounded-lg p-1">
+            <button
+              onClick={() => setStakeMode("single")}
+              className={`flex-1 py-3 text-center rounded-md transition-all duration-300 ${
+                stakeMode === "single"
+                  ? "bg-blue-600 text-white"
+                  : "text-blue-300 hover:bg-blue-800/60"
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <FaCoins
+                  className={
+                    stakeMode === "single" ? "text-yellow-400" : "text-blue-300"
+                  }
+                />
+                <span>Single Token</span>
               </div>
+            </button>
+            <button
+              onClick={() => setStakeMode("lp")}
+              className={`flex-1 py-3 text-center rounded-md transition-all duration-300 ${
+                stakeMode === "lp"
+                  ? "bg-blue-600 text-white"
+                  : "text-blue-300 hover:bg-blue-800/60"
+              }`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <FaExchangeAlt
+                  className={
+                    stakeMode === "lp" ? "text-yellow-400" : "text-blue-300"
+                  }
+                />
+                <span>LP Token</span>
+              </div>
+            </button>
+          </div>
 
-              {singleToken && (
-                <div className="bg-blue-900/30 p-4 rounded-lg">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <FaWallet className="text-yellow-400" />
-                      <span className="text-white font-medium">
-                        Your Balance
-                      </span>
-                    </div>
-                    <span className="text-white">
-                      {formatBalance(singleTokenBalance, singleToken.decimals)}{" "}
-                      {singleToken.symbol}
-                    </span>
+          <div className="space-y-6">
+            {stakeMode === "single" ? (
+              // Single Token Staking
+              <>
+                <div className="card-bg-premium-gold p-5 rounded-xl">
+                  <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                    <FaCoins className="text-yellow-400" />
+                    <span>Select Token to Stake</span>
+                  </h3>
+
+                  <div className="mb-4">
+                    <TokenSelect
+                      label="Choose Token"
+                      onSelect={handleSingleTokenSelect}
+                      includeLP={false}
+                      autoLoad={false}
+                      selectedTokenId={singleToken?.id || ""}
+                    />
                   </div>
 
-                  {/* Staking Amount */}
-                  <div className="mt-4">
-                    <label className="block text-blue-300 text-sm mb-2">
-                      Stake Amount
-                    </label>
-                    <div className="bg-blue-900/50 p-4 rounded-lg border border-blue-800/50">
-                      <div className="flex items-center gap-3 mb-2">
-                        <input
-                          type="text"
-                          value={formatBalance(
-                            stakeAmount,
+                  {singleToken && (
+                    <div className="bg-blue-900/30 p-4 rounded-lg">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <FaWallet className="text-yellow-400" />
+                          <span className="text-white font-medium">
+                            Your Balance
+                          </span>
+                        </div>
+                        <span className="text-white">
+                          {formatBalance(
+                            singleTokenBalance,
                             singleToken.decimals
-                          )}
-                          disabled
-                          className="w-full bg-blue-950/60 rounded py-2 px-3 text-white outline-none disabled:opacity-75"
-                        />
-                        <span className="text-white font-medium">
+                          )}{" "}
                           {singleToken.symbol}
                         </span>
                       </div>
 
-                      {/* Percentage selection buttons */}
-                      <div className="flex gap-2 mt-3">
-                        {[25, 50, 75, 100].map((percentage) => (
-                          <button
-                            key={percentage}
-                            onClick={() => setStakePercentage(percentage)}
-                            className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
-                              stakePercentage === percentage
-                                ? "bg-yellow-600 text-white"
-                                : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
-                            }`}
-                          >
-                            {percentage}%
-                          </button>
-                        ))}
+                      {/* Staking Amount with Custom Percentage Capability */}
+                      <div className="mt-4">
+                        <label className="block text-blue-300 text-sm mb-2">
+                          Stake Amount
+                        </label>
+                        <div className="bg-blue-900/50 p-4 rounded-lg border border-blue-800/50">
+                          <div className="flex items-center gap-3 mb-2">
+                            <input
+                              type="text"
+                              value={formatBalance(
+                                stakeAmount,
+                                singleToken.decimals
+                              )}
+                              disabled
+                              className="w-full bg-blue-950/60 rounded py-2 px-3 text-white outline-none disabled:opacity-75"
+                            />
+                            <span className="text-white font-medium">
+                              {singleToken.symbol}
+                            </span>
+                          </div>
+
+                          {/* Percentage selection buttons with custom input toggle */}
+                          <div className="flex gap-2 mt-3 flex-wrap">
+                            {!isCustomPercentage ? (
+                              // Preset percentage buttons
+                              <>
+                                {[25, 50, 75, 100].map((percentage) => (
+                                  <button
+                                    key={percentage}
+                                    onClick={() =>
+                                      setStakePercentage(percentage)
+                                    }
+                                    className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
+                                      stakePercentage === percentage
+                                        ? "bg-yellow-600 text-white"
+                                        : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
+                                    }`}
+                                  >
+                                    {percentage}%
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={toggleCustomPercentage}
+                                  className="flex-1 py-2 px-2 rounded text-sm font-medium bg-blue-900/60 text-blue-300 hover:bg-blue-800 flex items-center justify-center gap-1"
+                                >
+                                  <FaEdit size={12} />
+                                  <span>Custom</span>
+                                </button>
+                              </>
+                            ) : (
+                              // Custom percentage input
+                              <div className="flex w-full gap-2">
+                                <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
+                                  <input
+                                    type="text"
+                                    value={customPercentage}
+                                    onChange={(e) =>
+                                      handleCustomPercentageChange(
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full bg-transparent py-2 px-3 text-white outline-none"
+                                    placeholder="Enter percentage"
+                                    autoFocus
+                                  />
+                                  <span className="px-2 text-white">%</span>
+                                </div>
+                                <button
+                                  onClick={toggleCustomPercentage}
+                                  className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Token Details Section if token is selected */}
-            {singleToken && (
-              <div className="card-bg-premium p-5 rounded-xl">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-white flex items-center gap-2">
-                    <FaInfoCircle className="text-yellow-400" />
-                    <span>Token Information</span>
-                  </h3>
-                  <button
-                    onClick={() => setCalculationVisible(!calculationVisible)}
-                    className="text-yellow-400 hover:text-yellow-300 transition-colors flex items-center gap-1"
-                  >
-                    <FaCalculator />
-                    <span className="text-sm">
-                      {calculationVisible
-                        ? "Hide Calculator"
-                        : "Show Calculator"}
-                    </span>
-                    {calculationVisible ? (
-                      <FaChevronUp size={10} />
-                    ) : (
-                      <FaChevronDown size={10} />
+                {/* Token Details Section if token is selected */}
+                {singleToken && (
+                  <div className="card-bg-premium p-5 rounded-xl">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                        <FaInfoCircle className="text-yellow-400" />
+                        <span>Token Information</span>
+                      </h3>
+                      <button
+                        onClick={() =>
+                          setCalculationVisible(!calculationVisible)
+                        }
+                        className="text-yellow-400 hover:text-yellow-300 transition-colors flex items-center gap-1"
+                      >
+                        <FaCalculator />
+                        <span className="text-sm">
+                          {calculationVisible
+                            ? "Hide Calculator"
+                            : "Show Calculator"}
+                        </span>
+                        {calculationVisible ? (
+                          <FaChevronUp size={10} />
+                        ) : (
+                          <FaChevronDown size={10} />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="bg-blue-900/40 p-3 rounded-lg">
+                        <p className="text-blue-300 text-sm">Token</p>
+                        <p className="text-white font-medium">
+                          {singleToken.name} ({singleToken.symbol})
+                        </p>
+                      </div>
+                      <div className="bg-blue-900/40 p-3 rounded-lg">
+                        <p className="text-blue-300 text-sm">Estimated APR</p>
+                        <p className="text-white font-medium flex items-center gap-1">
+                          {aprEstimate}%
+                          <FaChartLine className="text-green-400" />
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* SUI Token Special Notice */}
+                    {singleToken.type === "0x2::sui::SUI" && (
+                      <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-700/30 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <FaInfoCircle className="text-yellow-400 mt-1 flex-shrink-0" />
+                          <p className="text-sm text-yellow-300">
+                            You're staking SUI token, which will be drawn
+                            directly from your SUI balance. Gas fees will also
+                            be paid from the same balance.
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </button>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="bg-blue-900/40 p-3 rounded-lg">
-                    <p className="text-blue-300 text-sm">Token</p>
-                    <p className="text-white font-medium">
-                      {singleToken.name} ({singleToken.symbol})
-                    </p>
-                  </div>
-                  <div className="bg-blue-900/40 p-3 rounded-lg">
-                    <p className="text-blue-300 text-sm">Estimated APR</p>
-                    <p className="text-white font-medium flex items-center gap-1">
-                      {aprEstimate}%
-                      <FaChartLine className="text-green-400" />
-                    </p>
-                  </div>
-                </div>
+                    {/* Rewards Calculator */}
+                    {calculationVisible && (
+                      <div className="bg-blue-900/30 p-4 rounded-lg border border-blue-800/50 mt-3 mb-4 animate-fadeIn">
+                        <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+                          <FaCalculator className="text-yellow-400" />
+                          <span>Rewards Calculator</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Daily Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.daily} VICTORY
+                            </p>
+                          </div>
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Weekly Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.weekly} VICTORY
+                            </p>
+                          </div>
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Monthly Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.monthly} VICTORY
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-blue-300 text-xs mt-3">
+                          * Rewards are estimated based on current APR and token
+                          prices. Actual rewards may vary.
+                        </p>
+                      </div>
+                    )}
 
-                {/* Rewards Calculator */}
-                {calculationVisible && (
-                  <div className="bg-blue-900/30 p-4 rounded-lg border border-blue-800/50 mt-3 mb-4 animate-fadeIn">
-                    <h4 className="text-white font-medium mb-3 flex items-center gap-2">
-                      <FaCalculator className="text-yellow-400" />
-                      <span>Rewards Calculator</span>
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Daily Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.daily} VICTORY
-                        </p>
-                      </div>
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Weekly Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.weekly} VICTORY
-                        </p>
-                      </div>
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Monthly Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.monthly} VICTORY
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-blue-300 text-xs mt-3">
-                      * Rewards are estimated based on current APR and token
-                      prices. Actual rewards may vary.
-                    </p>
+                    <button
+                      onClick={handleStake}
+                      disabled={
+                        isLoading ||
+                        !singleToken ||
+                        BigInt(stakeAmount) <= BigInt(0) ||
+                        !connected
+                      }
+                      className="w-full bg-green-600 text-white p-3 rounded-lg font-medium disabled:opacity-50 hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isLoading ? (
+                        <>
+                          <FaCircleNotch className="animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FaTractor />
+                          <span>
+                            Stake{" "}
+                            {formatBalance(stakeAmount, singleToken.decimals)}{" "}
+                            {singleToken.symbol}
+                          </span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
+              </>
+            ) : (
+              // LP Token Staking
+              <>
+                <div className="card-bg-premium-gold p-5 rounded-xl">
+                  <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+                    <FaExchangeAlt className="text-yellow-400" />
+                    <span>Select LP Token to Stake</span>
+                  </h3>
 
-                <button
-                  onClick={handleStake}
-                  disabled={
-                    isLoading ||
-                    !singleToken ||
-                    BigInt(stakeAmount) <= BigInt(0) ||
-                    !connected
-                  }
-                  className="w-full bg-green-600 text-white p-3 rounded-lg font-medium disabled:opacity-50 hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <FaCircleNotch className="animate-spin" />
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaTractor />
-                      <span>
-                        Stake {formatBalance(stakeAmount, singleToken.decimals)}{" "}
-                        {singleToken.symbol}
-                      </span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          // LP Token Staking
-          <>
-            <div className="card-bg-premium-gold p-5 rounded-xl">
-              <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
-                <FaExchangeAlt className="text-yellow-400" />
-                <span>Select LP Token to Stake</span>
-              </h3>
-
-              <div className="mb-4">
-                <div className="bg-blue-900/50 rounded-lg p-4 border border-blue-800/50">
-                  <label className="block text-blue-300 text-sm mb-2">
-                    Choose Token Pair
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <TokenSelect
-                      label="Token 1"
-                      onSelect={handleToken0Select}
-                      includeLP={false}
-                      autoLoad={false} 
-                      selectedTokenId={token0?.id}
-                      
-                    />
-                    <TokenSelect
-                      label="Token 2"
-                      onSelect={handleToken1Select}
-                      includeLP={false}
-                      autoLoad={false} 
-                      selectedTokenId={token1?.id}
-                    />
-                  </div>
-                </div>
-              </div>
-
-
-              {lpBalance === "0" && token0 && token1 && (
-  <div className="text-yellow-400 bg-blue-900/30 p-4 rounded-lg text-sm mt-4 border border-yellow-500/20">
-    <p>You don’t have any LP tokens for this pool.</p>
-    <a
-      href={`https://testthing2.vercel.app/#/addliquidity`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-300 underline mt-2 inline-block"
-    >
-      Provide Liquidity on SuiDex
-    </a>
-  </div>
-)}
-
-
-
-              {lpInfo && token0 && token1 && (
-                <div className="bg-blue-900/30 p-4 rounded-lg">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      <FaWallet className="text-yellow-400" />
-                      <span className="text-white font-medium">
-                        Your LP Balance
-                      </span>
-                    </div>
-                    <span className="text-white">
-                      {formatBalance(lpBalance, 9)} {token0.symbol}-
-                      {token1.symbol} LP
-                    </span>
-                  </div>
-
-                  {/* Staking Amount */}
-                  <div className="mt-4">
-                    <label className="block text-blue-300 text-sm mb-2">
-                      Stake Amount
-                    </label>
-                    <div className="bg-blue-900/50 p-4 rounded-lg border border-blue-800/50">
-                      <div className="flex items-center gap-3 mb-2">
-                        <input
-                          type="text"
-                          value={formatBalance(stakeAmount, 9)}
-                          disabled
-                          className="w-full bg-blue-950/60 rounded py-2 px-3 text-white outline-none disabled:opacity-75"
+                  <div className="mb-4">
+                    <div className="bg-blue-900/50 rounded-lg p-4 border border-blue-800/50">
+                      <label className="block text-blue-300 text-sm mb-2">
+                        Choose Token Pair
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <TokenSelect
+                          label="Token 1"
+                          onSelect={handleToken0Select}
+                          includeLP={false}
+                          autoLoad={false}
+                          selectedTokenId={token0?.id}
                         />
-                        <span className="text-white font-medium">
-                          {token0.symbol}-{token1.symbol} LP
+                        <TokenSelect
+                          label="Token 2"
+                          onSelect={handleToken1Select}
+                          includeLP={false}
+                          autoLoad={false}
+                          selectedTokenId={token1?.id}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Enhanced No LP Tokens UI */}
+                  {lpBalance === "0" && token0 && token1 && (
+                    <div className="bg-blue-900/30 p-6 rounded-lg border border-yellow-500/20 shadow-lg">
+                      <div className="flex flex-col items-center text-center">
+                        <FaWater className="text-yellow-400 text-3xl mb-3" />
+                        <h4 className="text-white text-lg font-semibold mb-2">
+                          No LP Tokens Found
+                        </h4>
+                        <p className="text-blue-300 mb-4">
+                          You need to provide liquidity first to get LP tokens
+                          for this pair.
+                        </p>
+                        <a
+                          href={getLiquidityUrl()}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-6 rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-900/40"
+                        >
+                          <FaExchangeAlt size={14} />
+                          <span>Provide Liquidity on SuiDex</span>
+                        </a>
+                        <p className="text-xs text-gray-400 mt-3">
+                          Your selected tokens will be pre-filled on the
+                          liquidity page.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {lpInfo && token0 && token1 && lpBalance !== "0" && (
+                    <div className="bg-blue-900/30 p-4 rounded-lg">
+                      <div className="flex justify-between items-center mb-3">
+                        <div className="flex items-center gap-2">
+                          <FaWallet className="text-yellow-400" />
+                          <span className="text-white font-medium">
+                            Your LP Balance
+                          </span>
+                        </div>
+                        <span className="text-white">
+                          {formatBalance(lpBalance, 9)} {token0.symbol}-
+                          {token1.symbol} LP
                         </span>
                       </div>
 
-                      {/* Percentage selection buttons */}
-                      <div className="flex gap-2 mt-3 ">
-                        {[25, 50, 75, 100].map((percentage) => (
-                          <button
-                            key={percentage}
-                            onClick={() => setStakePercentage(percentage)}
-                            className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
-                              stakePercentage === percentage
-                                ? "bg-yellow-600 text-white"
-                                : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
-                            }`}
-                          >
-                            {percentage}%
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* LP Details Section if LP is selected */}
-            {lpInfo && token0 && token1 && (
-              <div className="card-bg-premium p-5 rounded-xl">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-white flex items-center gap-2">
-                    <FaInfoCircle className="text-yellow-400" />
-                    <span>LP Information</span>
-                  </h3>
-                  <button
-                    onClick={() => setCalculationVisible(!calculationVisible)}
-                    className="text-yellow-400 hover:text-yellow-300 transition-colors flex items-center gap-1"
-                  >
-                    <FaCalculator />
-                    <span className="text-sm">
-                      {calculationVisible
-                        ? "Hide Calculator"
-                        : "Show Calculator"}
-                    </span>
-                    {calculationVisible ? (
-                      <FaChevronUp size={10} />
-                    ) : (
-                      <FaChevronDown size={10} />
-                    )}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="bg-blue-900/40 p-3 rounded-lg">
-                    <p className="text-blue-300 text-sm">LP Token</p>
-                    <p className="text-white font-medium">
-                      {token0.symbol}-{token1.symbol} LP
-                    </p>
-                  </div>
-                  <div className="bg-blue-900/40 p-3 rounded-lg">
-                    <p className="text-blue-300 text-sm">Estimated APR</p>
-                    <p className="text-white font-medium flex items-center gap-1">
-                      {aprEstimate}%
-                      <FaChartLine className="text-green-400" />
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-blue-900/30 p-3 rounded-lg mb-4">
-                  <p className="text-blue-300 text-sm mb-1">Token Pair</p>
-                  <div className="flex gap-2">
-                    <div className="bg-blue-900/50 text-white text-sm px-3 py-1 rounded-full border border-blue-800/50">
-                      {token0.symbol}
-                    </div>
-                    <div className="bg-blue-900/50 text-white text-sm px-3 py-1 rounded-full border border-blue-800/50">
-                      {token1.symbol}
-                    </div>
-                  </div>
-                </div>
-
-                {/* List individual LP tokens if there are multiple */}
-                {lpTokens.length > 1 && (
-                  <div className="bg-blue-900/30 p-3 rounded-lg mb-4">
-                    <p className="text-blue-300 text-sm mb-2">Your LP Tokens</p>
-                    <div className="max-h-40 overflow-y-auto space-y-2">
-                      {lpTokens.map((token, index) => (
-                        <div
-                          key={index}
-                          className="bg-blue-900/50 p-2 rounded-lg text-white text-sm"
-                        >
-                          <div className="flex justify-between">
-                            <span>LP Token {index + 1}</span>
-                            <span>{formatBalance(token.balance, 9)} LP</span>
+                      {/* Staking Amount with Custom Percentage Input */}
+                      <div className="mt-4">
+                        <label className="block text-blue-300 text-sm mb-2">
+                          Stake Amount
+                        </label>
+                        <div className="bg-blue-900/50 p-4 rounded-lg border border-blue-800/50">
+                          <div className="flex items-center gap-3 mb-2">
+                            <input
+                              type="text"
+                              value={formatBalance(stakeAmount, 9)}
+                              disabled
+                              className="w-full bg-blue-950/60 rounded py-2 px-3 text-white outline-none disabled:opacity-75"
+                            />
+                            <span className="text-white font-medium">
+                              {token0.symbol}-{token1.symbol} LP
+                            </span>
                           </div>
-                          <div className="text-blue-300 text-xs mt-1 break-all">
-                            ID: {token.coinObjectId.substring(0, 15)}...
+
+                          {/* Percentage selection buttons with custom option */}
+                          <div className="flex gap-2 mt-3 flex-wrap">
+                            {!isCustomPercentage ? (
+                              // Preset percentage buttons
+                              <>
+                                {[25, 50, 75, 100].map((percentage) => (
+                                  <button
+                                    key={percentage}
+                                    onClick={() =>
+                                      setStakePercentage(percentage)
+                                    }
+                                    className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
+                                      stakePercentage === percentage
+                                        ? "bg-yellow-600 text-white"
+                                        : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
+                                    }`}
+                                  >
+                                    {percentage}%
+                                  </button>
+                                ))}
+                                <button
+                                  onClick={toggleCustomPercentage}
+                                  className="flex-1 py-2 px-2 rounded text-sm font-medium bg-blue-900/60 text-blue-300 hover:bg-blue-800 flex items-center justify-center gap-1"
+                                >
+                                  <FaEdit size={12} />
+                                  <span>Custom</span>
+                                </button>
+                              </>
+                            ) : (
+                              // Custom percentage input
+                              <div className="flex w-full gap-2">
+                                <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
+                                  <input
+                                    type="text"
+                                    value={customPercentage}
+                                    onChange={(e) =>
+                                      handleCustomPercentageChange(
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full bg-transparent py-2 px-3 text-white outline-none"
+                                    placeholder="Enter percentage"
+                                    autoFocus
+                                  />
+                                  <span className="px-2 text-white">%</span>
+                                </div>
+                                <button
+                                  onClick={toggleCustomPercentage}
+                                  className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Rewards Calculator */}
-                {calculationVisible && (
-                  <div className="bg-blue-900/30 p-4 rounded-lg border border-blue-800/50 mt-3 mb-4 animate-fadeIn">
-                    <h4 className="text-white font-medium mb-3 flex items-center gap-2">
-                      <FaCalculator className="text-yellow-400" />
-                      <span>Rewards Calculator</span>
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Daily Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.daily} VICTORY
-                        </p>
-                      </div>
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Weekly Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.weekly} VICTORY
-                        </p>
-                      </div>
-                      <div className="bg-blue-900/50 p-3 rounded-lg">
-                        <p className="text-blue-300 text-xs mb-1">
-                          Monthly Rewards
-                        </p>
-                        <p className="text-white font-medium">
-                          {rewards.monthly} VICTORY
-                        </p>
                       </div>
                     </div>
-                    <p className="text-blue-300 text-xs mt-3">
-                      * Rewards are estimated based on current APR and token
-                      prices. Actual rewards may vary.
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  onClick={handleStake}
-                  disabled={
-                    isLoading ||
-                    !lpInfo ||
-                    BigInt(stakeAmount) <= BigInt(0) ||
-                    !connected
-                  }
-                  className="w-full bg-green-600 text-white p-3 rounded-lg font-medium disabled:opacity-50 hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <FaCircleNotch className="animate-spin" />
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <FaTractor />
-                      <span>
-                        Stake {formatBalance(stakeAmount, 9)} {token0.symbol}-
-                        {token1.symbol} LP
-                      </span>
-                    </>
                   )}
-                </button>
-              </div>
+                </div>
+
+                {/* LP Details Section if LP is selected */}
+                {lpInfo && token0 && token1 && lpBalance !== "0" && (
+                  <div className="card-bg-premium p-5 rounded-xl">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                        <FaInfoCircle className="text-yellow-400" />
+                        <span>LP Information</span>
+                      </h3>
+                      <button
+                        onClick={() =>
+                          setCalculationVisible(!calculationVisible)
+                        }
+                        className="text-yellow-400 hover:text-yellow-300 transition-colors flex items-center gap-1"
+                      >
+                        <FaCalculator />
+                        <span className="text-sm">
+                          {calculationVisible
+                            ? "Hide Calculator"
+                            : "Show Calculator"}
+                        </span>
+                        {calculationVisible ? (
+                          <FaChevronUp size={10} />
+                        ) : (
+                          <FaChevronDown size={10} />
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="bg-blue-900/40 p-3 rounded-lg">
+                        <p className="text-blue-300 text-sm">LP Token</p>
+                        <p className="text-white font-medium">
+                          {token0.symbol}-{token1.symbol} LP
+                        </p>
+                      </div>
+                      <div className="bg-blue-900/40 p-3 rounded-lg">
+                        <p className="text-blue-300 text-sm">Estimated APR</p>
+                        <p className="text-white font-medium flex items-center gap-1">
+                          {aprEstimate}%
+                          <FaChartLine className="text-green-400" />
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-900/30 p-3 rounded-lg mb-4">
+                      <p className="text-blue-300 text-sm mb-1">Token Pair</p>
+                      <div className="flex gap-2">
+                        <div className="bg-blue-900/50 text-white text-sm px-3 py-1 rounded-full border border-blue-800/50">
+                          {token0.symbol}
+                        </div>
+                        <div className="bg-blue-900/50 text-white text-sm px-3 py-1 rounded-full border border-blue-800/50">
+                          {token1.symbol}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* List individual LP tokens if there are multiple */}
+                    {lpTokens.length > 1 && (
+                      <div className="bg-blue-900/30 p-3 rounded-lg mb-4">
+                        <p className="text-blue-300 text-sm mb-2">
+                          Your LP Tokens
+                        </p>
+                        <div className="max-h-40 overflow-y-auto space-y-2">
+                          {lpTokens.map((token, index) => (
+                            <div
+                              key={index}
+                              className="bg-blue-900/50 p-2 rounded-lg text-white text-sm"
+                            >
+                              <div className="flex justify-between">
+                                <span>LP Token {index + 1}</span>
+                                <span>
+                                  {formatBalance(token.balance, 9)} LP
+                                </span>
+                              </div>
+                              <div className="text-blue-300 text-xs mt-1 break-all">
+                                ID: {token.coinObjectId.substring(0, 15)}...
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rewards Calculator */}
+                    {calculationVisible && (
+                      <div className="bg-blue-900/30 p-4 rounded-lg border border-blue-800/50 mt-3 mb-4 animate-fadeIn">
+                        <h4 className="text-white font-medium mb-3 flex items-center gap-2">
+                          <FaCalculator className="text-yellow-400" />
+                          <span>Rewards Calculator</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Daily Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.daily} VICTORY
+                            </p>
+                          </div>
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Weekly Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.weekly} VICTORY
+                            </p>
+                          </div>
+                          <div className="bg-blue-900/50 p-3 rounded-lg">
+                            <p className="text-blue-300 text-xs mb-1">
+                              Monthly Rewards
+                            </p>
+                            <p className="text-white font-medium">
+                              {rewards.monthly} VICTORY
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-blue-300 text-xs mt-3">
+                          * Rewards are estimated based on current APR and token
+                          prices. Actual rewards may vary.
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleStake}
+                      disabled={
+                        isLoading ||
+                        !lpInfo ||
+                        BigInt(stakeAmount) <= BigInt(0) ||
+                        !connected
+                      }
+                      className="w-full bg-green-600 text-white p-3 rounded-lg font-medium disabled:opacity-50 hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isLoading ? (
+                        <>
+                          <FaCircleNotch className="animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FaTractor />
+                          <span>
+                            Stake {formatBalance(stakeAmount, 9)}{" "}
+                            {token0.symbol}-{token1.symbol} LP
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Help Section */}
       <div className="mt-6 bg-blue-900/30 p-4 rounded-lg border border-blue-800/50">

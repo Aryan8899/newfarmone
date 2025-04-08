@@ -1,4 +1,3 @@
-// src/pages/Farm.tsx
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useWallet } from "@suiet/wallet-kit";
@@ -17,7 +16,6 @@ import {
 import { useBackground } from "../contexts/BackgroundContext";
 import EventBasedPoolListComponent from "../components/farm/EventBasedPoolListComponent";
 import StakingComponent from "../components/farm/StakingComponent";
-import TokenLockerComponent from "../components/farm/TokenLockerComponent";
 import UserStakesComponent from "../components/farm/UserStakesComponent";
 import { FarmStatsSection } from "../components/farm/FarmStatsSection";
 import { CONSTANTS } from "../constants/addresses";
@@ -225,11 +223,10 @@ export const Farm = () => {
     null
   );
 
-  // Define farm tabs
+  // Define farm tabs (removed locker tab)
   const farmTabs: FarmTabType[] = [
     { id: "pools", label: "Farm Pools", icon: FaTractor },
     { id: "stake", label: "Stake", icon: FaCoins },
-    { id: "locker", label: "Token Locker", icon: FaStar },
     { id: "positions", label: "My Positions", icon: FaChartLine },
   ];
 
@@ -323,7 +320,7 @@ export const Farm = () => {
         <div className="mb-8 animate-on-scroll stagger-2">
           <div className="card-bg-premium rounded-xl shadow-xl overflow-hidden">
             <div className="p-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {farmTabs.map((tab) => {
                   const Icon = tab.icon;
                   return (
@@ -380,13 +377,6 @@ export const Farm = () => {
                   </p>
                 </div>
               )}
-            </div>
-          )}
-
-          {/* Token Locker */}
-          {activeTab === "locker" && (
-            <div>
-              <TokenLockerComponent />
             </div>
           )}
 
