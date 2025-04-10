@@ -15,6 +15,7 @@ import {
   FaCircle,
   FaHistory,
   FaExternalLinkAlt,
+  FaChartPie,
 } from "react-icons/fa";
 import { toast } from "sonner";
 import { useBackground } from "../contexts/BackgroundContext";
@@ -268,7 +269,7 @@ const formatVictoryBalance = (balance: string) => {
   try {
     // Parse the balance as a BigInt to handle large numbers properly
     const bigIntBalance = BigInt(balance);
-    
+
     // Convert to a decimal number with proper precision
     // First divide by 10^3 to get a manageable number for JavaScript
     const reducedBalance = Number(bigIntBalance / BigInt(1000));
@@ -277,7 +278,7 @@ const formatVictoryBalance = (balance: string) => {
       minimumFractionDigits: 2,
       maximumFractionDigits: 6,
     });
-    
+
     return formattedBalance;
   } catch (e) {
     console.error("Error formatting VICTORY balance:", e);
@@ -289,36 +290,33 @@ const formatVictoryBalance = (balance: string) => {
 const extractFunctionName = (transaction: any): string | null => {
   try {
     if (!transaction) return null;
-    
+
     // Try to find the MoveCall in the transaction data
     let moveCall = null;
-    
+
     // Handle different transaction data structures
     if (transaction.transaction?.data?.transaction?.transactions) {
       // Newer structure
       const txs = transaction.transaction.data.transaction.transactions;
       moveCall = txs.find((tx: any) => tx && tx.MoveCall);
-      
     } else if (transaction.transaction?.data?.transaction) {
       // Alternative structure
       const tx = transaction.transaction.data.transaction;
       if (tx.MoveCall) moveCall = tx;
-      
     } else if (transaction.transaction?.data?.transactions) {
       // Legacy structure
       const txs = transaction.transaction.data.transactions;
       moveCall = txs.find((tx: any) => tx && tx.MoveCall);
-      
     } else if (transaction.MoveCall) {
       // Direct MoveCall
       moveCall = transaction;
     }
-    
+
     // Extract the function name if found
     if (moveCall && moveCall.MoveCall) {
       return moveCall.MoveCall.function || null;
     }
-    
+
     return null;
   } catch (error) {
     console.error("Error extracting function name:", error);
@@ -521,7 +519,7 @@ export default function MyPositions() {
     return `${years} year${years === 1 ? "" : "s"} ago`;
   };
 
-  // Calculate position stats - Removed USD values
+  // Calculate position stats with fixed parsing of formatted numbers
   const calculatePositionStats = (
     stakes: StakingPosition[],
     lockedTokens: any[] = []
@@ -541,6 +539,9 @@ export default function MyPositions() {
     const lpTokens = stakes.filter((p) => p.type === "lp");
     const singleTokens = stakes.filter((p) => p.type === "single");
 
+    console.log("lpTokens", lpTokens);
+    console.log("singleTokens", singleTokens);
+
     const totalLpTokens = lpTokens.reduce((total, pos) => {
       return total + parseFloat(pos.amountFormatted.replace(/,/g, "") || "0");
     }, 0);
@@ -553,10 +554,21 @@ export default function MyPositions() {
       2
     )} LP + ${totalSingleTokens.toFixed(2)} tokens`;
 
-    // Pending rewards
+    // Pending rewards - FIX: Remove commas before parsing to float
     const totalPendingRewards = stakes.reduce((total, pos) => {
-      // Use direct numeric conversion instead of string manipulation
-      return total + parseFloat(pos.pendingRewardsFormatted || "0");
+      // Remove ALL commas before parsing
+      const pendingRewardsValue = pos.pendingRewardsFormatted
+        ? parseFloat(pos.pendingRewardsFormatted.replace(/,/g, ""))
+        : 0;
+
+      // Log to verify correct parsing
+      console.log("Parsing pending rewards:", {
+        original: pos.pendingRewardsFormatted,
+        withoutCommas: pos.pendingRewardsFormatted?.replace(/,/g, ""),
+        parsed: pendingRewardsValue,
+      });
+
+      return total + pendingRewardsValue;
     }, 0);
 
     // Total locked (from token locker if available)
@@ -681,7 +693,7 @@ export default function MyPositions() {
                 <div>
                   <div className="flex items-center gap-3 mb-2">
                     <div className="bg-yellow-400/20 p-2 rounded-full">
-                      <FaTractor className="text-yellow-400 text-2xl" />
+                      <FaChartPie className="text-yellow-400 text-2xl" />
                     </div>
                     <h1 className="text-3xl font-dela text-white">
                       My Positions

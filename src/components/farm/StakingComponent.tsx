@@ -20,6 +20,7 @@ import {
   FaEdit,
   FaWater,
   FaSpinner,
+  FaSlidersH,
 } from "react-icons/fa";
 import { CONSTANTS, formatBalance } from "../../constants/addresses";
 import { TokenSelect } from "./TokenSelect";
@@ -97,6 +98,127 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
 
   const { connected, account, signAndExecuteTransactionBlock } = useWallet();
 
+  // PercentageSlider Component - Modular slider implementation
+  const PercentageSlider = ({
+    value,
+    onChange,
+    onCustomClick,
+    isCustomMode,
+    className = "",
+  }: {
+    value: number;
+    onChange: (value: number) => void;
+    onCustomClick: () => void;
+    isCustomMode: boolean;
+    className?: string;
+  }) => {
+    return (
+      <div className={`${className}`}>
+        <div className="flex justify-between text-xs text-blue-300 mb-2">
+          <span>0%</span>
+          <span>50%</span>
+          <span>100%</span>
+        </div>
+
+        <div className="relative py-1">
+          {/* Slider track background */}
+          <div className="absolute inset-0 top-1/2 transform -translate-y-1/2 h-2 bg-blue-900/50 rounded-lg"></div>
+
+          {/* Filled part of slider - gradient effect */}
+          <div
+            className="absolute inset-y-0 left-0 top-1/2 transform -translate-y-1/2 h-2 bg-gradient-to-r from-blue-500 to-cyan-400 rounded-lg"
+            style={{ width: `${value}%` }}
+          ></div>
+
+          {/* Tick marks for better visual reference */}
+          <div className="absolute inset-0 top-1/2 transform -translate-y-1/2 flex justify-between px-0">
+            {[0, 25, 50, 75, 100].map((tick) => (
+              <div
+                key={tick}
+                className={`w-0.5 h-1.5 bg-blue-200/30 rounded-full ${
+                  tick === 0 ? "ml-0" : tick === 100 ? "mr-0" : ""
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Slider input - invisible but handles interactions */}
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={value}
+            onChange={(e) => onChange(parseInt(e.target.value))}
+            className="relative w-full h-8 opacity-0 z-10 cursor-pointer"
+          />
+
+          {/* Custom animated thumb with glow effect */}
+          <div
+            className="absolute w-5 h-5 bg-white rounded-full shadow-lg border-2 border-blue-500 top-1/2 transform -translate-y-1/2 pointer-events-none transition-all duration-75"
+            style={{
+              left: `calc(${value}% - 10px)`,
+              boxShadow: "0 0 10px rgba(59, 130, 246, 0.7)",
+            }}
+          ></div>
+        </div>
+
+        <div className="flex justify-between items-center mt-3">
+          <div className="flex items-center">
+            <div className="text-white text-sm font-medium px-3 py-1 rounded-md bg-blue-800/80 border border-blue-700 shadow-sm">
+              {value}%
+            </div>
+          </div>
+          <button
+            onClick={onCustomClick}
+            className="text-xs text-yellow-400 hover:text-yellow-300 flex items-center gap-1 px-2 py-1 rounded-md bg-blue-900/70 hover:bg-blue-800/80 transition-colors"
+          >
+            {isCustomMode ? <FaSlidersH size={10} /> : <FaEdit size={10} />}
+            <span>{isCustomMode ? "Use Slider" : "Custom Value"}</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Handle custom percentage change
+  const handleCustomPercentageChange = (value: string) => {
+    // Remove non-numeric characters
+    const numericValue = value.replace(/[^0-9.]/g, "");
+    setCustomPercentage(numericValue);
+
+    // Convert to number and validate
+    const percentage = parseFloat(numericValue);
+    if (!isNaN(percentage) && percentage >= 0 && percentage <= 100) {
+      // Calculate amount based on custom percentage
+      if (stakeMode === "single" && singleToken) {
+        const isSui = singleToken.type === "0x2::sui::SUI";
+        // If SUI, ensure we leave some for gas
+        const adjustedPercentage = isSui && percentage > 95 ? 95 : percentage;
+
+        const amount =
+          (BigInt(singleTokenBalance) *
+            BigInt(Math.floor(adjustedPercentage))) /
+          BigInt(100);
+        setStakeAmount(amount.toString());
+      } else if (stakeMode === "lp" && lpInfo) {
+        const amount =
+          (BigInt(lpBalance) * BigInt(Math.floor(percentage))) / BigInt(100);
+        setStakeAmount(amount.toString());
+      }
+    }
+  };
+
+  // Toggle custom percentage input
+  const toggleCustomPercentage = () => {
+    setIsCustomPercentage(!isCustomPercentage);
+    if (!isCustomPercentage) {
+      setCustomPercentage(stakePercentage.toString());
+    } else {
+      setStakePercentage(parseInt(customPercentage) || 100);
+    }
+  };
+
   // Helper function to get base type for coin
   const getBaseType = (coinType: string): string => {
     try {
@@ -112,6 +234,21 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       console.error("Error parsing coin type:", error);
       return String(coinType || "");
     }
+  };
+
+  // Helper function to ensure proper type format for API calls
+  const ensureProperTypeFormat = (coinType: string): string => {
+    // First normalize to ensure 0x prefix
+    let normalized = normalizeCoinType(coinType);
+
+    // Ensure we have exactly two :: separators for module::struct format
+    const parts = normalized.split("::");
+    if (parts.length === 3) {
+      return normalized; // Already in correct format
+    }
+
+    console.error("Invalid type format:", coinType);
+    return normalized;
   };
 
   // Helper function to sort tokens according to factory's rules
@@ -160,6 +297,41 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       return null;
     }
   };
+
+  // Auto-refresh when window gains focus (user returns from DEX)
+  useEffect(() => {
+    // Function to refresh LP balance when user returns to the page
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && account?.address) {
+        console.log("Page visibility changed to visible - refreshing balances");
+        if (stakeMode === "lp" && token0 && token1) {
+          console.log("Refreshing LP balance after return from DEX");
+          fetchLpBalance(token0.type, token1.type);
+        }
+      }
+    };
+
+    // Function to handle window focus (alternative way to detect return)
+    const handleWindowFocus = () => {
+      if (account?.address) {
+        console.log("Window focused - refreshing balances");
+        if (stakeMode === "lp" && token0 && token1) {
+          console.log("Refreshing LP balance after window focus");
+          fetchLpBalance(token0.type, token1.type);
+        }
+      }
+    };
+
+    // Add event listeners
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+
+    // Cleanup event listeners on component unmount
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [stakeMode, token0, token1, account?.address]);
 
   // Handle loading from URL parameters or initialToken
   useEffect(() => {
@@ -356,33 +528,43 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
             return;
           }
 
+          // Ensure correct type format for API calls
+          const properTokenType = ensureProperTypeFormat(tokenType);
+
           // Try to get object ID for this token type if we don't have it
           const tokenId = isTypeString
-            ? await getTokenObjectId(tokenType, suiClient, account.address)
+            ? await getTokenObjectId(
+                properTokenType,
+                suiClient,
+                account.address
+              )
             : typeParam;
 
           // Get token metadata
           const metadata = await suiClient
-            .getCoinMetadata({ coinType: tokenType })
+            .getCoinMetadata({ coinType: properTokenType })
             .catch(() => null);
 
           if (!metadata) {
-            console.warn("⚠️ No metadata returned for", tokenType);
+            console.warn("⚠️ No metadata returned for", properTokenType);
           }
 
           // Create token info
           const tokenInfo: TokenInfo = {
             id: tokenId || typeParam,
-            name: metadata?.name || tokenType.split("::").pop() || "Unknown",
+            name:
+              metadata?.name || properTokenType.split("::").pop() || "Unknown",
             symbol:
-              metadata?.symbol || tokenType.split("::").pop() || "Unknown",
-            type: tokenType,
+              metadata?.symbol ||
+              properTokenType.split("::").pop() ||
+              "Unknown",
+            type: properTokenType,
             decimals: metadata?.decimals ?? 9,
           };
 
           console.log("✅ Setting single token info:", tokenInfo);
           setSingleToken(tokenInfo);
-          await fetchTokenBalance(tokenType);
+          await fetchTokenBalance(properTokenType);
         }
       } catch (error) {
         console.error("Error initializing tokens:", error);
@@ -399,8 +581,14 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
   useEffect(() => {
     if (!isCustomPercentage) {
       if (stakeMode === "single" && singleToken) {
+        const isSui = singleToken.type === "0x2::sui::SUI";
+        // If SUI, leave some balance for gas
+        const adjustedPercentage =
+          isSui && stakePercentage > 95 ? 95 : stakePercentage;
+
         const amount =
-          (BigInt(singleTokenBalance) * BigInt(stakePercentage)) / BigInt(100);
+          (BigInt(singleTokenBalance) * BigInt(adjustedPercentage)) /
+          BigInt(100);
         setStakeAmount(amount.toString());
       } else if (stakeMode === "lp" && lpInfo) {
         const amount =
@@ -417,39 +605,6 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
     lpInfo,
     isCustomPercentage,
   ]);
-
-  // Handle custom percentage change
-  const handleCustomPercentageChange = (value: string) => {
-    // Remove non-numeric characters
-    const numericValue = value.replace(/[^0-9.]/g, "");
-    setCustomPercentage(numericValue);
-
-    // Convert to number and validate
-    const percentage = parseFloat(numericValue);
-    if (!isNaN(percentage) && percentage >= 0 && percentage <= 100) {
-      // Calculate amount based on custom percentage
-      if (stakeMode === "single" && singleToken) {
-        const amount =
-          (BigInt(singleTokenBalance) * BigInt(Math.floor(percentage))) /
-          BigInt(100);
-        setStakeAmount(amount.toString());
-      } else if (stakeMode === "lp" && lpInfo) {
-        const amount =
-          (BigInt(lpBalance) * BigInt(Math.floor(percentage))) / BigInt(100);
-        setStakeAmount(amount.toString());
-      }
-    }
-  };
-
-  // Toggle custom percentage input
-  const toggleCustomPercentage = () => {
-    setIsCustomPercentage(!isCustomPercentage);
-    if (!isCustomPercentage) {
-      setCustomPercentage(stakePercentage.toString());
-    } else {
-      setStakePercentage(parseInt(customPercentage) || 100);
-    }
-  };
 
   // Fetch APR estimate from farm contract
   const fetchAprEstimate = async (tokenType: string) => {
@@ -506,7 +661,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       console.log(`Fetching balance for token type: ${tokenType}`);
 
       // Normalize token type
-      const normalizedType = normalizeCoinType(tokenType);
+      const normalizedType = ensureProperTypeFormat(tokenType);
 
       // Get coins of the specific type
       const coins = await suiClient.getCoins({
@@ -546,8 +701,8 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
       const { token0Type: sortedToken0, token1Type: sortedToken1 } =
         await sortTokens(token0Type, token1Type);
 
-      const normalizedToken0 = normalizeCoinType(sortedToken0);
-      const normalizedToken1 = normalizeCoinType(sortedToken1);
+      const normalizedToken0 = ensureProperTypeFormat(sortedToken0);
+      const normalizedToken1 = ensureProperTypeFormat(sortedToken1);
 
       console.log("Normalized token types:", {
         token0: normalizedToken0,
@@ -813,27 +968,59 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
           // Special handling for SUI token
           console.log("Handling SUI token staking with special logic");
 
-          // For SUI, we can use tx.splitCoins(tx.gas, [amount]) directly
-          const stakeCoin = tx.splitCoins(tx.gas, [
-            tx.pure.u64(stakeAmount.toString()),
-          ])[0];
+          // For SUI, we need to leave some for gas
+          // Simple approach: reserve 0.01 SUI (10000000) for gas
+          const gasReserve = BigInt(10000000);
+          const targetAmount = BigInt(stakeAmount);
 
-          // Add stake_single call for SUI
-          tx.moveCall({
-            target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
-            arguments: [
-              tx.object(CONSTANTS.FARM_ID),
-              stakeCoin,
-              tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
-            ],
-            typeArguments: [singleToken.type],
-          });
+          // Check if there is enough balance after gas reserve
+          if (targetAmount + gasReserve > BigInt(singleTokenBalance)) {
+            const adjustedAmount = BigInt(singleTokenBalance) - gasReserve;
+            if (adjustedAmount <= BigInt(0)) {
+              throw new Error(
+                "Insufficient SUI for transaction. Please keep some SUI for gas fees."
+              );
+            }
+
+            // Use the adjusted amount
+            const stakeCoin = tx.splitCoins(tx.gas, [
+              tx.pure.u64(adjustedAmount.toString()),
+            ])[0];
+
+            tx.moveCall({
+              target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
+              arguments: [
+                tx.object(CONSTANTS.FARM_ID),
+                stakeCoin,
+                tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
+              ],
+              typeArguments: [singleToken.type],
+            });
+          } else {
+            // There's enough SUI, proceed with original amount
+            const stakeCoin = tx.splitCoins(tx.gas, [
+              tx.pure.u64(targetAmount.toString()),
+            ])[0];
+
+            tx.moveCall({
+              target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_single`,
+              arguments: [
+                tx.object(CONSTANTS.FARM_ID),
+                stakeCoin,
+                tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
+              ],
+              typeArguments: [singleToken.type],
+            });
+          }
         } else {
           // For non-SUI tokens, use regular approach
           // Get coins to use for staking
+          // Ensure proper type format for API call
+          const tokenType = ensureProperTypeFormat(singleToken.type);
+
           const coins = await suiClient.getCoins({
             owner: account.address,
-            coinType: singleToken.type,
+            coinType: tokenType,
           });
 
           if (coins.data.length === 0) {
@@ -900,7 +1087,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
               stakeCoin,
               tx.object(CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID),
             ],
-            typeArguments: [singleToken.type],
+            typeArguments: [tokenType],
           });
         }
       } else if (stakeMode === "lp" && lpInfo && token0 && token1) {
@@ -988,10 +1175,14 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
           objects: lpCoin, // Use 'objects' instead of 'elements'
         });
 
+        // Ensure proper type format for API calls
+        const normalizedToken0Type = ensureProperTypeFormat(lpInfo.token0Type);
+        const normalizedToken1Type = ensureProperTypeFormat(lpInfo.token1Type);
+
         // Build stake_lp transaction with proper arguments
         tx.moveCall({
           target: `${CONSTANTS.PACKAGE_ID}::${CONSTANTS.MODULES.FARM}::stake_lp`,
-          typeArguments: [lpInfo.token0Type, lpInfo.token1Type],
+          typeArguments: [normalizedToken0Type, normalizedToken1Type],
           arguments: [
             tx.object(CONSTANTS.FARM_ID),
             vectorArg,
@@ -1005,7 +1196,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
           vectorArg,
           targetAmount: targetAmount.toString(),
           treasuryCapId: CONSTANTS.VICTORY_TOKEN.TREASURY_CAP_WRAPPER_ID,
-          typeArgs: [lpInfo.token0Type, lpInfo.token1Type],
+          typeArgs: [normalizedToken0Type, normalizedToken1Type],
         });
       } else {
         throw new Error("Please select valid tokens to stake");
@@ -1146,6 +1337,25 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
     return `https://testthing2.vercel.app/#/addliquidity?${params.toString()}`;
   };
 
+  // Function to refresh all balances and data
+  const refreshAllData = () => {
+    setLoadingParams(true);
+
+    if (stakeMode === "single" && singleToken) {
+      console.log("Refreshing single token balance...");
+      fetchTokenBalance(singleToken.type).finally(() =>
+        setLoadingParams(false)
+      );
+    } else if (stakeMode === "lp" && token0 && token1) {
+      console.log("Refreshing LP token balance...");
+      fetchLpBalance(token0.type, token1.type).finally(() =>
+        setLoadingParams(false)
+      );
+    } else {
+      setLoadingParams(false);
+    }
+  };
+
   return (
     <div className="card-bg-premium rounded-lg shadow p-6">
       <div className="flex items-center gap-3 mb-6">
@@ -1244,7 +1454,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                         </span>
                       </div>
 
-                      {/* Staking Amount with Custom Percentage Capability */}
+                      {/* Staking Amount with Slider */}
                       <div className="mt-4">
                         <label className="block text-blue-300 text-sm mb-2">
                           Stake Amount
@@ -1265,61 +1475,42 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                             </span>
                           </div>
 
-                          {/* Percentage selection buttons with custom input toggle */}
-                          <div className="flex gap-2 mt-3 flex-wrap">
-                            {!isCustomPercentage ? (
-                              // Preset percentage buttons
-                              <>
-                                {[25, 50, 75, 100].map((percentage) => (
-                                  <button
-                                    key={percentage}
-                                    onClick={() =>
-                                      setStakePercentage(percentage)
-                                    }
-                                    className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
-                                      stakePercentage === percentage
-                                        ? "bg-yellow-600 text-white"
-                                        : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
-                                    }`}
-                                  >
-                                    {percentage}%
-                                  </button>
-                                ))}
-                                <button
-                                  onClick={toggleCustomPercentage}
-                                  className="flex-1 py-2 px-2 rounded text-sm font-medium bg-blue-900/60 text-blue-300 hover:bg-blue-800 flex items-center justify-center gap-1"
-                                >
-                                  <FaEdit size={12} />
-                                  <span>Custom</span>
-                                </button>
-                              </>
-                            ) : (
-                              // Custom percentage input
-                              <div className="flex w-full gap-2">
-                                <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
-                                  <input
-                                    type="text"
-                                    value={customPercentage}
-                                    onChange={(e) =>
-                                      handleCustomPercentageChange(
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full bg-transparent py-2 px-3 text-white outline-none"
-                                    placeholder="Enter percentage"
-                                    autoFocus
-                                  />
-                                  <span className="px-2 text-white">%</span>
-                                </div>
-                                <button
-                                  onClick={toggleCustomPercentage}
-                                  className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
-                                >
-                                  Apply
-                                </button>
+                          {/* Use the modular Percentage Slider component */}
+                          <PercentageSlider
+                            value={stakePercentage}
+                            onChange={(value) => {
+                              setStakePercentage(value);
+                              setIsCustomPercentage(false);
+                            }}
+                            onCustomClick={toggleCustomPercentage}
+                            isCustomMode={isCustomPercentage}
+                            className="mt-4"
+                          />
+
+                          {/* Custom percentage input (conditionally rendered) */}
+                          {isCustomPercentage && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
+                                <input
+                                  type="text"
+                                  value={customPercentage}
+                                  onChange={(e) =>
+                                    handleCustomPercentageChange(e.target.value)
+                                  }
+                                  className="w-full bg-transparent py-2 px-3 text-white outline-none"
+                                  placeholder="Enter percentage"
+                                  autoFocus
+                                />
+                                <span className="px-2 text-white">%</span>
                               </div>
-                            )}
-                          </div>
+                              <button
+                                onClick={toggleCustomPercentage}
+                                className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1376,9 +1567,11 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                         <div className="flex items-start gap-2">
                           <FaInfoCircle className="text-yellow-400 mt-1 flex-shrink-0" />
                           <p className="text-sm text-yellow-300">
-                            You're staking SUI token, which will be drawn
-                            directly from your SUI balance. Gas fees will also
-                            be paid from the same balance.
+                            <strong>Important:</strong> When staking SUI tokens,
+                            a small amount will be reserved for gas fees. You
+                            can stake up to 95% of your SUI balance at once.
+                            This helps ensure you can always complete the
+                            transaction.
                           </p>
                         </div>
                       </div>
@@ -1498,6 +1691,16 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                           You need to provide liquidity first to get LP tokens
                           for this pair.
                         </p>
+                        <button
+                          onClick={refreshAllData}
+                          className="mb-3 bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded-md transition-colors flex items-center gap-1 text-sm"
+                        >
+                          <FaCircleNotch
+                            className={`${loadingParams ? "animate-spin" : ""}`}
+                            size={12}
+                          />
+                          <span>Refresh Balance</span>
+                        </button>
                         <a
                           href={getLiquidityUrl()}
                           target="_blank"
@@ -1530,7 +1733,7 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                         </span>
                       </div>
 
-                      {/* Staking Amount with Custom Percentage Input */}
+                      {/* Staking Amount with Slider */}
                       <div className="mt-4">
                         <label className="block text-blue-300 text-sm mb-2">
                           Stake Amount
@@ -1548,61 +1751,42 @@ const StakingComponent: React.FC<StakingComponentProps> = ({
                             </span>
                           </div>
 
-                          {/* Percentage selection buttons with custom option */}
-                          <div className="flex gap-2 mt-3 flex-wrap">
-                            {!isCustomPercentage ? (
-                              // Preset percentage buttons
-                              <>
-                                {[25, 50, 75, 100].map((percentage) => (
-                                  <button
-                                    key={percentage}
-                                    onClick={() =>
-                                      setStakePercentage(percentage)
-                                    }
-                                    className={`flex-1 py-2 px-2 rounded text-sm font-medium transition-colors ${
-                                      stakePercentage === percentage
-                                        ? "bg-yellow-600 text-white"
-                                        : "bg-blue-900/60 text-blue-300 hover:bg-blue-800"
-                                    }`}
-                                  >
-                                    {percentage}%
-                                  </button>
-                                ))}
-                                <button
-                                  onClick={toggleCustomPercentage}
-                                  className="flex-1 py-2 px-2 rounded text-sm font-medium bg-blue-900/60 text-blue-300 hover:bg-blue-800 flex items-center justify-center gap-1"
-                                >
-                                  <FaEdit size={12} />
-                                  <span>Custom</span>
-                                </button>
-                              </>
-                            ) : (
-                              // Custom percentage input
-                              <div className="flex w-full gap-2">
-                                <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
-                                  <input
-                                    type="text"
-                                    value={customPercentage}
-                                    onChange={(e) =>
-                                      handleCustomPercentageChange(
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full bg-transparent py-2 px-3 text-white outline-none"
-                                    placeholder="Enter percentage"
-                                    autoFocus
-                                  />
-                                  <span className="px-2 text-white">%</span>
-                                </div>
-                                <button
-                                  onClick={toggleCustomPercentage}
-                                  className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
-                                >
-                                  Apply
-                                </button>
+                          {/* Use the modular Percentage Slider component */}
+                          <PercentageSlider
+                            value={stakePercentage}
+                            onChange={(value) => {
+                              setStakePercentage(value);
+                              setIsCustomPercentage(false);
+                            }}
+                            onCustomClick={toggleCustomPercentage}
+                            isCustomMode={isCustomPercentage}
+                            className="mt-4"
+                          />
+
+                          {/* Custom percentage input (conditionally rendered) */}
+                          {isCustomPercentage && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <div className="flex-1 flex items-center bg-blue-950/60 rounded overflow-hidden">
+                                <input
+                                  type="text"
+                                  value={customPercentage}
+                                  onChange={(e) =>
+                                    handleCustomPercentageChange(e.target.value)
+                                  }
+                                  className="w-full bg-transparent py-2 px-3 text-white outline-none"
+                                  placeholder="Enter percentage"
+                                  autoFocus
+                                />
+                                <span className="px-2 text-white">%</span>
                               </div>
-                            )}
-                          </div>
+                              <button
+                                onClick={toggleCustomPercentage}
+                                className="py-2 px-4 rounded text-sm font-medium bg-blue-700 text-white hover:bg-blue-600"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

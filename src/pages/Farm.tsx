@@ -8,6 +8,7 @@ import {
   FaCoins,
   FaInfoCircle,
   FaStar,
+  FaChartPie,
   FaExclamationTriangle,
   FaArrowRight,
   FaChevronDown,
@@ -52,12 +53,12 @@ const FarmBanner = () => {
           </p>
         </div>
         <div className="flex space-x-3">
-          <Link to="/my-positions">
-            <button className="button-premium py-3 px-6 rounded-xl flex items-center gap-2 font-dela shadow-lg hover:shadow-blue-600/20">
-              <FaTractor />
-              My Positions
-            </button>
-          </Link>
+          <Link to="/my-positions" className="w-full sm:w-auto">
+                      <button className="button-secondary py-2 sm:py-3 px-4 sm:px-6 rounded-xl flex items-center justify-center gap-2 font-dela shadow-lg hover:shadow-blue-600/20 w-full cursor-pointer">
+                        <FaChartPie />
+                        My Positions
+                      </button>
+                    </Link>
         </div>
       </div>
     </div>

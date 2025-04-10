@@ -14,7 +14,7 @@ import {
   FaStar,
   FaFire,
 } from "react-icons/fa";
-import { useWallet } from '@suiet/wallet-kit';
+import { useWallet } from "@suiet/wallet-kit";
 import { SuiClient } from "@mysten/sui/client";
 import { useBackground } from "../contexts/BackgroundContext";
 import { StatsCardProps, ValueCardProps, MarketStats } from "../types";
@@ -98,32 +98,40 @@ const ValueCard = ({ label, value, dollarValue, icon }: ValueCardProps) => {
   );
 };
 
-// Featured Banner Component with reduced motion
+// Featured Banner Component with improved responsiveness and My Positions button
 const FeaturedBanner = () => {
   return (
-    <div className="relative overflow-hidden rounded-xl card-bg-premium-gold p-6 shadow-xl">
+    <div className="relative overflow-hidden rounded-xl card-bg-premium-gold p-4 sm:p-6 shadow-xl">
       {/* Subtle glow elements */}
       <div className="absolute -top-24 -right-24 w-48 h-48 bg-yellow-500/10 rounded-full blur-3xl"></div>
       <div className="absolute -bottom-24 -left-24 w-48 h-48 bg-blue-600/15 rounded-full blur-3xl"></div>
 
-      <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-dela text-white mb-2">
+      <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4 sm:gap-6">
+        <div className="text-center md:text-left w-full md:w-auto">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-dela text-white mb-2">
             Welcome to <span className="text-shimmer-gold">SuiTrump Farm</span>
           </h1>
-          <p className="text-blue-200 font-poppins max-w-xl">
+          <p className="text-blue-200 font-poppins max-w-xl text-sm sm:text-base">
             Stake, Farm and Earn in the Most Presidential DeFi Platform.
             Experience{" "}
             <span className="text-yellow-400">unprecedented yields</span> with
             our innovative farming strategies.
           </p>
         </div>
-        <Link to="/farm">
-          <button className="button-gold py-3 px-8 rounded-xl flex items-center gap-2 font-dela shadow-lg hover:shadow-yellow-600/20">
-            <FaTractor />
-            Start Farming
-          </button>
-        </Link>
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+          <Link to="/my-positions" className="w-full sm:w-auto">
+            <button className="button-secondary py-2 sm:py-3 px-4 sm:px-6 rounded-xl flex items-center justify-center gap-2 font-dela shadow-lg hover:shadow-blue-600/20 w-full cursor-pointer">
+              <FaChartPie />
+              My Positions
+            </button>
+          </Link>
+          <Link to="/farm" className="w-full sm:w-auto">
+            <button className="button-secondary py-2 sm:py-3 px-4 sm:px-6 rounded-xl flex items-center justify-center gap-2 font-dela shadow-lg hover:shadow-yellow-600/20 w-full cursor-pointer">
+              <FaTractor />
+              Start Farming
+            </button>
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -385,7 +393,6 @@ const QuickActionsPanel = () => {
 
 // Farmer Dashboard Component with enhanced styling
 const FarmerDashboard = ({ victoryBalance }: { victoryBalance: string }) => {
-
   return (
     <div className="card-bg-premium rounded-xl shadow-xl overflow-hidden relative">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-yellow-500/10 to-transparent rounded-bl-full"></div>
@@ -406,14 +413,12 @@ const FarmerDashboard = ({ victoryBalance }: { victoryBalance: string }) => {
             dollarValue="~$0.00"
             icon={FaTractor}
           />
-<ValueCard
-  label="VICTORY in Wallet"
-  value={victoryBalance}
-  dollarValue="~$0.00"
-  icon={FaCoins}
-/>
-
-
+          <ValueCard
+            label="VICTORY in Wallet"
+            value={victoryBalance}
+            dollarValue="~$0.00"
+            icon={FaCoins}
+          />
 
           <div className="flex justify-end mt-4">
             <Link to="/farm" className="group">
@@ -508,8 +513,8 @@ const TwitterFeed = () => {
 
 export const Dashboard = () => {
   const { setIntensity } = useBackground();
-  const [victoryBalance, setVictoryBalance] = useState('0.000');
-const { account, connected } = useWallet();
+  const [victoryBalance, setVictoryBalance] = useState("0.000");
+  const { account, connected } = useWallet();
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
   const [marketStats, setMarketStats] = useState<MarketStats>({
     marketCap: "$475,605",
@@ -524,39 +529,39 @@ const { account, connected } = useWallet();
     setIntensity("low"); // Reduced intensity for a more professional look
   }, [setIntensity]);
 
-
   useEffect(() => {
     const fetchVictoryBalance = async () => {
       if (!connected || !account?.address) return;
-      
+
       const all = await suiClient.getAllBalances({ owner: account.address });
       console.log("ALL BALANCES", all);
-      
+
       try {
         const balances = await suiClient.getBalance({
           owner: account.address,
-          coinType: '0xf882b67867ad5675b77f9fda790f417c330ae58915f0f664b70bc70669445cbf::victory_token::VICTORY_TOKEN',
+          coinType:
+            "0xf882b67867ad5675b77f9fda790f417c330ae58915f0f664b70bc70669445cbf::victory_token::VICTORY_TOKEN",
         });
-        
+
         // Convert the raw balance to billions
         const rawBalance: string = balances.totalBalance;
-        
+
         // Given the discrepancy, it seems the wallet is dividing by 10^15 to get billions
         const billionsValue = parseFloat(rawBalance) / 1e15;
-        
+
         // Format to 2 decimal places with commas for thousands
-        const formattedBalance = billionsValue.toLocaleString('en-US', { 
-          minimumFractionDigits: 2, 
-          maximumFractionDigits: 2 
+        const formattedBalance = billionsValue.toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
         });
-        
+
         // Add the "B" suffix to match the wallet display
         setVictoryBalance(`${formattedBalance} B`);
       } catch (err) {
         console.error("Failed to fetch VICTORY balance:", err);
       }
     };
-    
+
     fetchVictoryBalance();
   }, [connected, account]);
 
@@ -609,8 +614,7 @@ const { account, connected } = useWallet();
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Farmer Dashboard */}
           <div className="animate-on-scroll stagger-1">
-          <FarmerDashboard victoryBalance={victoryBalance} />
-
+            <FarmerDashboard victoryBalance={victoryBalance} />
           </div>
 
           {/* Market Chart */}
